@@ -1,4 +1,5 @@
 *RE-RELEASE of mnestor's GCal-Search*
+
 *Now with choice of virtual contact or virtual presence devices*
 
 Steps to set this up...
