@@ -154,13 +154,12 @@ def poll() {
 }
 
 def deviceSch(time, method, args) {
-	runOnce(time, method, args)
+	runOnce(time, getDevice().${method}(), args)
 }
 
 def deviceUnSch(method) {
 	unschedule(method)
 }
-
 
 def open() {
 	getDevice().open()
@@ -170,9 +169,11 @@ def close() {
 	getDevice().close()
 }
 
+/**
 def arrived() {
 	getDevice().arrived()
 }
+**/
 
 def departed() {
 	getDevice().departed()
