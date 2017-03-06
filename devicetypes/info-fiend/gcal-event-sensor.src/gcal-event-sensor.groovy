@@ -10,8 +10,24 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ * Updates:
  *
- *	Version 1.1 - modified scheduling and logs
+ * 20170306.1 - Scheduling updated 
+ * 				Fixed Event Trigger with no search string.
+ *				Added AskAlexa Message Queue compatibility
+ *               
+ * 20170302.1 - Re-release version 
+ *
+ * 20160411.1 - Change schedule to happen in the child app instead of the device
+ * 20160332.2 - Updated date parsing for non-fullday events
+ * 20160331.1 - Fix for all day event attempt #2
+ * 20160319.1 - Fix for all day events
+ * 20160302.1 - Allow for polling of device version number
+ * 20160301.1 - GUI fix for white space
+ * 20160223.4 - Fix for Dates in UK
+ * 20160223.3 - Fix for DateFormat, set the closeTime before we call open() on in progress event to avoid exception
+ * 20160223.1 - Error checking - Force check for Device Handler so we can let the user have a more informative error
+ *
  *
  */
  
@@ -27,14 +43,14 @@ metadata {
 
 		command "open"
 		command "close"
-        command "off"
-        command "on"
         
+        attribute "calendar", "json_object"
+        attribute "calName", "string"
         attribute "eventSummary", "string"
-        attribute "eventDesc", "string"
-        attribute "eventTitle", "string"
         attribute "openTime", "number"
-        attribute "closeTime", "number"
+        attribute "closeTime", "number"		
+		attribute "startMsg", "string"
+        attribute "endMsg", "string"        
 	}
 
 	simulator {
@@ -48,6 +64,14 @@ metadata {
 			state("open", label:'', icon:"https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal-On@2x.png", backgroundColor:"#ffa81e")
 		}
         
+        standardTile("closeBtn", "device.fake", width: 3, height: 2, decoration: "flat") {
+			state("default", label:'CLOSE', backgroundColor:"#CCCC00", action:"close")
+		}
+
+		standardTile("openBtn", "device.fake", width: 3, height: 2, decoration: "flat") {
+			state("default", label:'OPEN', backgroundColor:"#53a7c0", action:"open")
+		}
+        
         standardTile("refresh", "device.refresh", inactiveLabel: false, decoration: "flat", width:4, height: 2) {
             state "default", action:"refresh.refresh", icon:"st.secondary.refresh"
         }
@@ -57,27 +81,24 @@ metadata {
         }
         
 		main "status"
-		details(["status", "refresh", "summary"])
+		details(["status", "refresh", "summary"])	//"closeBtn", "openBtn",
 	}
 }
 
 def installed() {
+    sendEvent(name: "switch", value: "off")
     sendEvent(name: "contact", value: "closed", isStateChange: true)
-    sendEvent(name: "switch", value: "off", isStateChange: true)
+    
     initialize()
 }
 
 def updated() {
-    initialize()
+	initialize()
 }
 
 def initialize() {
 	
-	state.openScheduled = false
-   	state.closeScheduled = false
-    refresh()
-    
-    runEvery15Minutes(poll)
+
 }
 
 def parse(String description) {
@@ -88,186 +109,151 @@ def parse(String description) {
 def refresh() {
 	log.trace "refresh()"
     
-    try { unschedule(poll) } catch (e) {  }
-        
-    poll()
+    parent.refresh() // reschedule poll
+    poll() // and do one now
     
 }
 
 def open() {
-	log.trace "open()"
+	log.trace "open():"
+        
+    sendEvent(name: "switch", value: "on")
 	sendEvent(name: "contact", value: "open", isStateChange: true)
-    sendEvent(name: "switch", value: "on", isStateChange: true)
 
-    def closeTime = device.currentValue("closeTime")
-    log.debug "Scheduling Close of event for: ${closeTime}"    
-
-	parent.deviceSch(closeTime, "close", [overwrite: true])
-    state.closeScheduled = true
+	def closeTime = new Date( device.currentState("closeTime").value )	
+    log.debug "Scheduling Close for: ${closeTime}"
+    sendEvent("name":"closeTime", "value":closeTime)
+    parent.scheduleEvent("close", closeTime, [overwrite: true])
+    
+    //AskAlexaMsg    
+	def askAlexaMsg = device.currentValue("startMsg")	
+	parent.askAlexaStartMsgQueue(askAlexaMsg)        
 }
 
 def close() {
-	log.trace "close()"
-    sendEvent(name: "contact", value: "closed")
-    sendEvent(name: "switch", value: "off", isStateChange: true)
+	log.trace "close():"
     
+    sendEvent(name: "switch", value: "off")
+    sendEvent(name: "contact", value: "closed", isStateChange: true)           
+    
+    //AskAlexaMsg
+	def askAlexaMsg = device.currentValue("endMsg")	
+	parent.askAlexaEndMsgQueue(askAlexaMsg)    
+           
 }
 
-def on() {
-	log.trace "on()"
-    sendEvent(name: "switch", value: "on", isStateChange: true)
-}
-
-def off() {
-	log.trace "off()"
-    sendEvent(name: "switch", value: "off", isStateChange: true)
-}
-
-
-def poll() {
+void poll() {
     log.trace "poll()"
     def items = parent.getNextEvents()
     try {
     
 	    def currentState = device.currentValue("contact") ?: "closed"
-    	def isOpen = currentState == "open" ? true : false
-	    log.debug "Contact is currently: ${currentState}"
+    	def isOpen = currentState == "open"
+	    log.debug "isOpen is currently: ${isOpen}"
     
-        // EVENT FOUND
+        // START EVENT FOUND **********
     	if (items && items.items && items.items.size() > 0) {        
 	        //	Only process the next scheduled event 
     	    def event = items.items[0]
         	def title = event.summary
             
-        	log.debug "Found a future event!"
+            def calName = "GCal Primary"
+            if ( event.organizer.displayName ) {
+            	calName = event.organizer.displayName
+           	}
+            
+        	log.debug "We Haz Eventz! ${event}"
 
 	        def start
     	    def end
-            
-        	//	get start and end dateTimes adjusting for timezone            
-        	if (event.start.containsKey('date')) {
-        	//	this is for full day events
-				log.debug "${title} is an all-day event."
-    	        def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd")
-        	    sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))
-            	start = sdf.parse(event.start.date)
-	            log.debug "All-Day event starts on = ${start}"
-    	        end = new Date(sdf.parse(event.end.date).time - 60)
-        	    log.debug "All-Day event ends on = ${end}"            
-	        } else {
-		        log.debug "${title} is a timed event."	
-        	    def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss")
-            	sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))
-	            start = sdf.parse(event.start.dateTime)
-				log.debug "Timed event starts at = ${start}"
-        	    end = sdf.parse(event.end.dateTime)
-				log.debug "Timed event ends at = ${end}"            
-	        }            		            
-        
-	        def eventSummary = "Title: ${title}\n"
-    	    def startHuman = start.format("EEE, d MMM yyyy hh:mm a", location.timeZone)
-        	eventSummary += "Open: ${startHuman}\n"
-	        def endHuman = end.format("EEE, d MMM yyyy hh:mm a", location.timeZone)
-    	    eventSummary += "Close: ${endHuman}\n"
-        	eventSummary += "Calendar: ${event.organizer.displayName}\n\n"
+            def type = "E"
         	
-    	    sendEvent("name":"eventSummary", "value":eventSummary, isStateChange: true)
-        	sendEvent("name":"eventTitle", "value":event.summary, isStateChange: true)
+        	if (event.start.containsKey('date')) {
+        	//	this is for all-day events            	
+				type = "All-day e"   				             
+    	        def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd")
+        	    sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))            	
+                start = sdf.parse(event.start.date)                
+    	        end = new Date(sdf.parse(event.end.date).time - 60)   
+	        } else {            	
+			//	this is for timed events            	            
+        	    def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss")
+            	sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))	            
+                start = sdf.parse(event.start.dateTime)
+        	    end = sdf.parse(event.end.dateTime)
+            }   
+                        
+	        def eventSummary = "Event: ${title}\n\n"
+			eventSummary += "Calendar: ${calName}\n\n"            
+    	    def startHuman = start.format("EEE, hh:mm a", location.timeZone)
+        	eventSummary += "Opens: ${startHuman}\n"
+	        def endHuman = end.format("EEE, hh:mm a", location.timeZone)
+    	    eventSummary += "Closes: ${endHuman}\n\n"
+        	        	
+            def startMsg = "${type}vent ${title} started at: " + startHuman
+            def endMsg = "${type}vent ${title} ended at: " + endHuman
+
 
             if (event.description) {
 	            eventSummary += event.description ? event.description : ""
-                sendEvent("name":"eventDesc", "value":event.description, isStateChange: true)
     		}    
-        
-        //Need closeTime set before opening an event in progress
-        //set the closeTime attribute, in the open() call we'll setup the timer for close
-        //this way we don't keep timers open in case the start time gets cancelled
-    	    sendEvent("name":"closeTime", "value":end, isStateChange: true)    
-			sendEvent("name":"openTime", "value":start, isStateChange: true)    
-        
-        //check if we're already in the event
-	        def dateTest = new Date()
-    	    log.debug "Current date/time = ${dateTest}"
-           // log.debug "Next start date/time = ${start}"
-        	if (start <= dateTest) {
-        		log.debug "Already in event ${event.summary}."
-	        	if (!isOpen) { 
-                    try { 
-						parent.deviceUnSch("open")
-                        state.openScheduled = false
-					} catch (e) {
-				    	log.warn "Failed to unschedule(open): ${e}"
-					} 
+                      
+       	    sendEvent("name":"eventSummary", "value":eventSummary, isStateChange: true)
+            
+			//Set the closeTime and endMeg before opening an event in progress
+	        //Then use in the open() call for scheduling close and askAlexaMsgQueue
+        	
+            sendEvent("name":"closeTime", "value":end)           
+        	sendEvent("name":"endMsg", "value":endMsg)
 
-            		log.debug "Contact currently closed, so opening."
+			sendEvent("name":"openTime", "value":start)           
+			sendEvent("name":"startMsg", "value":startMsg)
+            
+      		// ALREADY IN EVENT?	        	                   
+	           // YES
+        	if ( start <= new Date() ) {
+        		log.debug "Already in event ${title}."
+	        	if (!isOpen) {                     
+            		log.debug "Contact currently closed, so opening."                    
                     open()                     
                 }
+
+                // NO                        
 	        } else {
-            	log.debug "Event ${event.summary} still in future."
-	        	if (isOpen) { 
-					try { 
-						parent.deviceUnSch("close") 
-                        state.closeScheduled = false
-					} catch (e) {
-				    	log.warn "Failed to unschedule(close): ${e}"
-					}                 
-                	
-                    log.debug "Contact currently open, so close."
-                    close() 
-                }                                
-        	}
-            
-        // Schedule next open, if not already already in event
-            if (state.openScheduled != true) {
-	           	log.debug "Scheduling to open at: ${start}"
-        		parent.deviceSch(start, "open", [overwrite: true])
-                state.openScheduled = true
-	        } else {
-	            log.debug "${event.summary} already scheduled to open."
-            }
-                
-        // NO EVENT FOUND
+            	log.debug "Event ${title} still in future."
+	        	if (isOpen) { 				
+                    log.debug "Contact incorrectly open, so close."
+                    close()                     
+				}                 
+	            
+                log.debug "SCHEDULING OPEN: parent.scheduleEvent(open, ${start}, '[overwrite: true]' )."
+        		parent.scheduleEvent("open", start, [overwrite: true])
+
+        	}            
+        // END EVENT FOUND *******
+
+
+        // START NO EVENT FOUND ******
     	} else {
-        	log.trace "No events."
+        	log.trace "No events - set all atributes to null."
+
 	    	sendEvent("name":"eventSummary", "value":"No events found", isStateChange: true)
-            sendEvent("name":"eventTitle", "value":null, isStateChange: true)
-            sendEvent("name":"eventDesc", "value":null, isStateChange: true)
             
-	    	if (isOpen) { 
-            	try { 
-					parent.deviceUnSch("close")
-                    state.closeScheduled = false
-	                sendEvent("name":"closeTime", "value":null, isStateChange: true)
-				} catch (e) {
-				   	log.warn "Failed to unschedule(close): ${e}"
-				}                                   
-                
-                log.debug "Contact currently open, so close."
-                close() 
-    	    } else {
-            	try { 
-                	parent.deviceUnSch("open")
-                    state.openScheduled = false
-					sendEvent("name":"openTime", "value":null, isStateChange: true)
-                } catch (e) {
-                	log.warn "Failed to unschedule(open): ${e}"
-                } 			                                    
-            }
-    	}
-    
+	    	if (isOpen) {             	
+                log.debug "Contact incorrectly open, so close."
+                close()                 
+    	    } else { 
+				parent.unscheduleEvent("open")   
+    		}            
+        }      
+        // END NO EVENT FOUND
+            
     } catch (e) {
     	log.warn "Failed to do poll: ${e}"
     }
 }
-
-/**
-def setRefresh(min) {
-	log.trace "Setting refresh: ${min}"
-	sendEvent("name":"refreshTime", "value":min, isStateChange: true)
-}
-
-**/
+ 
 
 def version() {
-	def text = "20170303.1"
+	def text = "20170306.1"
 }

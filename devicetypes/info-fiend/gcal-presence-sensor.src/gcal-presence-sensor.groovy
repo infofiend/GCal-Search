@@ -1,5 +1,5 @@
 /**
- *  Copyright 2016 Anthony Pastor
+ *  Copyright 2017 Anthony Pastor
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -9,6 +9,14 @@
  *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
+ *
+ * Updates:
+ *
+ * 20170306.1 - Scheduling updated
+ * 				Fixed Event Trigger with no search string.
+ *				Added AskAlexa Message Queue compatibility
+ *                
+ * 20170302.1 - Initial release 
  *
  */
  
@@ -26,15 +34,15 @@ metadata {
 		command "arrived"
 		command "departed"
         command "present"
-		command "away"
-        command "on"
-        command "off"
+		command "away"       
         
+        attribute "calendar", "json_object"
+        attribute "calName", "string"
         attribute "eventSummary", "string"
-        attribute "eventDesc", "string"
-        attribute "eventTitle", "string"
         attribute "arriveTime", "number"
         attribute "departTime", "number"
+        attribute "startMsg", "string"
+        attribute "endMsg", "string"  
 	}
 
 	simulator {
@@ -50,14 +58,14 @@ metadata {
 		}
         
 		standardTile("notPresentBtn", "device.fake", width: 3, height: 2, decoration: "flat") {
-			state("not present", label:'AWAY', backgroundColor:"#CCCC00", action:"departed")
+			state("default", label:'AWAY', backgroundColor:"#CCCC00", action:"departed")
 		}
 
 		standardTile("presentBtn", "device.fake", width: 3, height: 2, decoration: "flat") {
-			state("present", label:'HERE', backgroundColor:"#53a7c0", action:"arrived")
+			state("default", label:'HERE', backgroundColor:"#53a7c0", action:"arrived")
 		}
 
-        standardTile("refresh", "device.refresh", inactiveLabel: false, decoration: "flat", width:3, height: 1) {
+        standardTile("refresh", "device.refresh", inactiveLabel: false, decoration: "flat", width:3, height: 3) {
             state "default", action:"refresh.refresh", icon:"st.secondary.refresh"
         }
                 
@@ -67,7 +75,7 @@ metadata {
 
 		main("presence")
 		details([
-			"presence", "notPresentBtn", "presentBtn", "refresh", "summary"	
+			"presence", "refresh", "summary"	//"notPresentBtn", "presentBtn",
 		]) 
 	}
 
@@ -76,79 +84,71 @@ metadata {
 }
 
 def installed() {
-    sendEvent(name: "contact", value: "closed", isStateChange: true)
-    sendEvent(name: "switch", value: "off", isStateChange: true)
+    sendEvent(name: "switch", value: "off")
+    sendEvent(name: "presence", value: "not present", isStateChange: true)
+
     initialize()
 }
 
 def updated() {
-    initialize()
+	initialize()
 }
 
 def initialize() {
 	
-	state.openScheduled = false
-   	state.closeScheduled = false
-    refresh()
-    
-    runEvery15Minutes(poll)
+	
 }
 
 def parse(String description) {
 
 }
 
-// refresh status
-def refresh() {
-	log.trace "refresh()"
-    
-    try { unschedule(poll) } catch (e) {  }
-        
-    poll()
-    
-}
-
-def departed() {
-	log.trace "Executing 'departed()'"
-	away()
-}
-
-def away() {
-	log.trace "Executing 'away()'"
-    sendEvent(name: 'presence', value: 'not present', isStateChange: true)   
-	sendEvent(name: "switch", value: "off", isStateChange: true)
-}
-
-
 def arrived() {
-	log.trace "Executing 'arrived()'"
+	log.trace "arrived():"
 	present()
 }
 
 def present() {
-	log.trace "Executing 'present()'"
-	sendEvent(name: 'presence', value: 'present', isStateChange: true)
-    sendEvent(name: "switch", value: "on", isStateChange: true)  
+	log.trace "present()"
+    sendEvent(name: "switch", value: "on")
+    sendEvent(name: 'presence', value: 'present', isStateChange: true)
     
-    def departTime = device.currentValue("departTime")
-    log.debug "Scheduling departure for: ${departTime}"    
-
-	parent.deviceSch(departTime, "away", [overwrite: true])
-    state.departScheduled = true	
+    def departTime = new Date( device.currentState("departTime").value )	
+    log.debug "Scheduling Close for: ${departTime}"
+    sendEvent("name":"departTime", "value":departTime)
+    parent.scheduleEvent("depart", departTime, [overwrite: true])
+    
+    //AskAlexaMsg    
+	def askAlexaMsg = device.currentValue("startMsg")	
+	parent.askAlexaStartMsgQueue(askAlexaMsg)     
 }
 
 
-
-def on() {
-	log.trace "on()"
-    sendEvent(name: "switch", value: "on", isStateChange: true)
+// refresh status
+def refresh() {
+	log.trace "refresh()"
+    
+    parent.refresh() // reschedule poll
+    poll() // and do one now
+    
 }
 
-def off() {
-	log.trace "off()"
-    sendEvent(name: "switch", value: "off", isStateChange: true)
+def departed() {
+	log.trace "departed():"
+	away()
 }
 
+def away() {
+	log.trace "away():"
+    
+	sendEvent(name: "switch", value: "off")
+    sendEvent(name: 'presence', value: 'not present', isStateChange: true)   
+    
+     //AskAlexaMsg
+	def askAlexaMsg = device.currentValue("endMsg")	
+	parent.askAlexaEndMsgQueue(askAlexaMsg)   
+   	
+}
 
 def poll() {
     log.trace "poll()"
@@ -156,139 +156,113 @@ def poll() {
     try {
     
 	    def currentState = device.currentValue("presence") ?: "not present"
-    	def isPresent = currentState == "present" ? true : false
-	    log.debug "isPresent is currently: ${currentState}"
+    	def isPresent = currentState == "present"
+	    log.debug "isPresent is currently: ${isPresent}"
     
-        // EVENT FOUND
+        // START EVENT FOUND **********
     	if (items && items.items && items.items.size() > 0) {        
 	        //	Only process the next scheduled event 
     	    def event = items.items[0]
         	def title = event.summary
             
-        	log.debug "Found a future event!"
+            def calName = "GCal Primary"
+            if ( event.organizer.displayName ) {
+            	calName = event.organizer.displayName
+           	}
+            
+        	log.debug "We Haz Eventz! ${event}"
 
 	        def start
     	    def end
+            def type = "E"
             
-        	//	get start and end dateTimes adjusting for timezone            
         	if (event.start.containsKey('date')) {
-        	//	this is for full day events
-				log.debug "${title} is an all-day event."
+        	//	this is for all-day events            	
+				type = "All-day e"   				             
     	        def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd")
         	    sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))
             	start = sdf.parse(event.start.date)
-	            log.debug "All-Day event starts on = ${start}"
     	        end = new Date(sdf.parse(event.end.date).time - 60)
-        	    log.debug "All-Day event ends on = ${end}"            
 	        } else {
-		        log.debug "${title} is a timed event."	
+			//	this is for timed events            	            
         	    def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss")
             	sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))
 	            start = sdf.parse(event.start.dateTime)
-				log.debug "Timed event starts at = ${start}"
         	    end = sdf.parse(event.end.dateTime)
-				log.debug "Timed event ends at = ${end}"            
 	        }            		            
         
-	        def eventSummary = "Title: ${title}\n"
-    	    def startHuman = start.format("EEE, d MMM yyyy hh:mm a", location.timeZone)
-        	eventSummary += "Arrival: ${startHuman}\n"
-	        def endHuman = end.format("EEE, d MMM yyyy hh:mm a", location.timeZone)
-    	    eventSummary += "Departure: ${endHuman}\n"
-        	eventSummary += "Calendar: ${event.organizer.displayName}\n\n"
+	        def eventSummary = "Event: ${title}\n\n"
+			eventSummary += "Calendar: ${state.calName}\n\n"            
+    	    def startHuman = start.format("EEE, hh:mm a", location.timeZone)
+        	eventSummary += "Arrives: ${startHuman}\n"
+	        def endHuman = end.format("EEE, hh:mm a", location.timeZone)
+    	    eventSummary += "Departs: ${endHuman}\n\n"
         	
-    	    sendEvent("name":"eventSummary", "value":eventSummary, isStateChange: true)
-        	sendEvent("name":"eventTitle", "value":event.summary, isStateChange: true)
+            def startMsg = "${title} arrived at: " + startHuman
+            def endMsg = "${title} departed at: " + endHuman
+        	    	    
 
             if (event.description) {
 	            eventSummary += event.description ? event.description : ""
-                sendEvent("name":"eventDesc", "value":event.description, isStateChange: true)
-    		}    
-        
-        //Need departTime set before arrival of an event in progress
-        //set the departTime attribute, in the arrived() call we'll setup the timer for departed
-        //this way we don't keep timers open in case the start time gets cancelled
-    	    sendEvent("name":"departTime", "value":end, isStateChange: true)    
-			sendEvent("name":"arriveTime", "value":start, isStateChange: true)    
-        
-        //check if we're already in the event
-	        def dateTest = new Date()
-    	    log.debug "Current date/time = ${dateTest}"
-           // log.debug "Next start date/time = ${start}"
-        	if (start <= dateTest) {
-        		log.debug "Already present ${event.summary}."
-	        	if (!isPresent) { 
-                    try { 
-						parent.deviceUnSch("arrived")
-                        state.arriveScheduled = false
-					} catch (e) {
-				    	log.warn "Failed to unschedule(arrived): ${e}"
-					} 
-
-            		log.debug "No presence currently, so arriving."
-                    arrived()                     
-                }
-	        } else {
-            	log.debug "Event ${event.summary} still in future."
-	        	if (isPresent) { 
-					try { 
-						parent.deviceUnSch("departed") 
-                        state.departScheduled = false
-					} catch (e) {
-				    	log.warn "Failed to unschedule(departed): ${e}"
-					}                 
-                	
-                    log.debug "Presence currently, so departing."
-                    departed() 
-                }                                
-        	}
+    		}    	
+            	       
+			sendEvent("name":"eventSummary", "value":eventSummary, isStateChange: true)   
             
-        // Schedule next arrival, if not already already in event
-            if (state.arrivedScheduled != true) {
-	           	log.debug "Scheduled to arrive at: ${start}"
-        		parent.deviceSch(start, "arrived", [overwrite: true])
-                state.arriveScheduled = true
+			//Set the closeTime and endMeg before opening an event in progress
+	        //Then use in the open() call for scheduling close and askAlexaMsgQueue
+
+            sendEvent("name":"departTime", "value":end)           
+        	sendEvent("name":"endMsg", "value":endMsg)
+                    
+			sendEvent("name":"arriveTime", "value":start)           
+			sendEvent("name":"startMsg", "value":startMsg)
+
+      		// ALREADY IN EVENT?	        	                   
+	           // YES
+        	if ( start <= new Date() ) {
+        		log.debug "Already in event ${title}."
+	        	if (!isPresent) {                     
+            		log.debug "Not Present, so arriving."                    
+                    open()                     
+                }   
+            	
+				// NO                
 	        } else {
-	            log.debug "${event.summary} already scheduled."
-            }
+            	log.debug "Event ${title} still in future."
                 
-        // NO EVENT FOUND
+                if (isPresent) { 
+	                log.debug "Presence incorrect, so departing."	                
+    	            departed()                                         
+              	}
+                    
+                log.debug "SCHEDULING ARRIVAL: parent.scheduleEvent(arrive, ${start}, '[overwrite: true]' )."
+        		parent.scheduleEvent("arrive", start, [overwrite: true])
+                
+			}           
+        // END EVENT FOUND *******
+
+
+        // START NO EVENT FOUND ******
     	} else {
-        	log.trace "No events."
-	    	sendEvent("name":"eventSummary", "value":"No events found", isStateChange: true)
-            sendEvent("name":"eventTitle", "value":null, isStateChange: true)
-            sendEvent("name":"eventDesc", "value":null, isStateChange: true)
+        	log.trace "No events - set all atributes to null."
+	    	
+            sendEvent("name":"eventSummary", "value":"No events found", isStateChange: true)
             
 	    	if (isPresent) { 
-            	try { 
-					parent.deviceUnSch("departed")
-                    state.departScheduled = false
-	                sendEvent("name":"departTime", "value":null, isStateChange: true)
-				} catch (e) {
-				   	log.warn "Failed to unschedule(departed): ${e}"
-				}                                   
-                
-                log.debug "Presence currently, so departing."
-                departed() 
-    	    } else {
-            	try { 
-                	parent.deviceUnSch("arrived")
-                    state.arriveScheduled = false
-					sendEvent("name":"arriveTime", "value":null, isStateChange: true)
-                } catch (e) {
-                	log.warn "Failed to unschedule(arrived): ${e}"
-                } 			                                    
-            }
+            	   
+                log.debug "Presence incorrect, so departing."
+                departed()                                          
+            } else { 
+				parent.unscheduleEvent("open")   
+    	    } 
     	}
-    
+        // END NO EVENT FOUND
+        
     } catch (e) {
     	log.warn "Failed to do poll: ${e}"
     }
 }
 
 def version() {
-	def text = "20170303.1"
+	def text = "20170306.1"
 }
-
-
-
