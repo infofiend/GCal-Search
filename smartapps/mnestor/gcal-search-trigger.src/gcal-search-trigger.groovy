@@ -127,7 +127,7 @@ def initialize() {
     }
     
     //Currently deletes the queue at midnight
-	schedule("48 00 00 ? ? ? ?", queueDeletionHandler)
+	schedule("0 0 0 * * ?", queueDeletionHandler)
 }
 
 def getDevice() {
