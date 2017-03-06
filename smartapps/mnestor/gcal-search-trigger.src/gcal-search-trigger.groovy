@@ -1,5 +1,5 @@
 /**
- *  Copyright 2016 Mike Nestor (2017 updates by Anthony Pastor)
+ *  Copyright 2017 Mike Nestor & Anthony Pastor
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -15,7 +15,9 @@
 /**
  *
  * Updates:
- * 20170303.1 - added choice to make child device either contact or presence; conformed methods with updated DTH
+ *
+ * 20170306.1 - Bug fixes; No search string now working; schedules fixed
+ * 20170303.1 - Re-release version.  Added choice to make child device either contact or presence; conformed methods with updated DTH
  *
  * 20160411.1 - Change schedule to happen in the child app instead of the device
  * 20150304.1 - Revert back hub ID to previous method
@@ -44,14 +46,15 @@ preferences {
 }
 
 private version() {
-	def text = "20170303.1"
+	def text = "20170306.1"
 }
 
 def selectCalendars() {
 	log.debug "selectCalendars()"
     
     def calendars = parent.getCalendarList()
-    
+    log.debug "Calendar list = ${calendars}"
+           
     //force a check to make sure the device handler is available for use
     try {
     	def device = getDevice()
@@ -68,7 +71,7 @@ def selectCalendars() {
                 input name: "name", type: "text", title: "Assign a Name", required: true, multiple: false
                 
                 //we can't do multiple calendars because the api doesn't support it and it could potentially cause a lot of traffic to happen
-                input name: "watchCalendars", title:"", type: "enum", required:true, multiple:false, description: "Which calendars do you want to search?", metadata:[values:calendars]
+                input name: "watchCalendars", title:"", type: "enum", required:true, multiple:false, description: "Which calendars do you want to search?", metadata:[values:calendars], submitOnChange: true
                 
                 input name: "eventOrPresence", title:"", type: "enum", required:true, multiple:false, description: "Do you want this gCal Search Trigger to control an Event or a Virtual Presence?", options:["Event", "Presence"]
             }
@@ -81,10 +84,20 @@ def selectCalendars() {
                 "\"#Holiday\" (anything with #Holiday)\n#Holiday (anything with Holiday, ignores the #)"
                 
             }
+            section("Optional - AskAlexa Messages") {
+            	input name:"wantStartMsgs", type: "enum", title: "Send notification of event start?", required: true, multiple: false, options: ["Yes", "No"], defaultValue: "No", submitOnChange: true
+            	
+                input name:"wantEndMsgs", type: "enum", title: "Send notification of event end?", required: true, multiple: false, options: ["Yes", "No"], defaultValue: "No", submitOnChange: true                
+
+	//			input name: "theTime", type: "time", title: "Time to clear AskAlexa message queue?", required: false, multiple: false
+            }
+            
             if (childCreated()){
             	section ("Tap the button below to remove this trigger and corresponding switch"){}
             }
         }
+        
+
 }
 
 def installed() {
@@ -104,7 +117,7 @@ def updated() {
 def initialize() {
     log.debug "initialize()"
     app.updateLabel(settings.name)
-    
+
     def device = getDevice()
     
     if (eventOrPresence == "Event") {
@@ -113,17 +126,19 @@ def initialize() {
 	    device.label = "GCal Presence:${settings.name}"    
     }
     
-//    device.refresh()
+    //Currently deletes the queue at midnight
+	schedule("48 00 00 ? ? ? ?", queueDeletionHandler)
 }
 
 def getDevice() {
 	def device
     if (!childCreated()) {
-    	if (eventOrPresence == "Event") {
-	        device = addChildDevice(getNamespace(), getEventDeviceHandler(), getDeviceID(), null, [label: "GCal Event:${settings.name}", completedSetup: true])
+	    def calName = state.calName
+    	if (eventOrPresence == "Event") {        	
+	        device = addChildDevice(getNamespace(), getEventDeviceHandler(), getDeviceID(), null, [label: "GCal Event:${settings.name}", calendar: watchCalendars, completedSetup: true])
             
     	} else if (eventOrPresence == "Presence") {
-			device = addChildDevice(getNamespace(), getPresenceDeviceHandler(), getDeviceID(), null, [label: "GCal Presence:${settings.name}", completedSetup: true])
+			device = addChildDevice(getNamespace(), getPresenceDeviceHandler(), getDeviceID(), null, [label: "GCal Presence:${settings.name}", calendar: watchCalendars, completedSetup: true])
             
 		}
 	} else {
@@ -153,39 +168,90 @@ def poll() {
 	getDevice().poll()
 }
 
-def deviceSch(time, method, args) {
-	runOnce(time, getDevice().${method}(), args)
+private askAlexaStartMsgQueue(msgText) {
+    if (settings.wantStartMsgs == "Yes") {
+		log.trace "askAlexaStartMsgQueue ( ${msgText} ):"
+    	def myApp = settings.name
+    
+		sendLocationEvent(name: "AskAlexaMsgQueue", value: myApp, isStateChange: true, descriptionText: msgText, unit: myApp)  
+	} else {
+    	log.trace "No Start Msgs"
+	}    
 }
 
-def deviceUnSch(method) {
-	unschedule(method)
+private askAlexaEndMsgQueue(msgText) {
+    if (settings.wantEndMsgs == "Yes") {
+		log.trace "askAlexaEndMsgQueue ( ${msgText} ):"
+    	def myApp = settings.name
+    
+		sendLocationEvent(name: "AskAlexaMsgQueue", value: myApp, isStateChange: true, descriptionText: msgText, unit: myApp)  
+	
+    } else {
+    	log.trace "No End Msgs"
+	}    
+}
+
+
+private queueDeletionHandler() {
+	askAlexaMsgQueueDelete() 
+}
+
+private askAlexaMsgQueueDelete() {
+	log.trace "askAlexaMsgQueueDelete():"
+    def myApp = settings.name
+    
+	sendLocationEvent(name: "AskAlexaMsgQueueDelete", value: myApp, isStateChange: true, unit: myApp)  
+
+}
+
+def scheduleEvent(method, time, args) {
+    def device = getDevice()
+   	log.trace "scheduleEvent( ${method}, ${time}, ${args} ) from ${device}." 
+	runOnce( time, method, args)	
+}
+
+def unscheduleEvent(method) {
+	log.trace "unscheduleEvent( ${method} )" 
+    try { 
+    	unschedule( "${method}" ) 
+    } catch (e) {}       
 }
 
 def open() {
+	log.trace "${settings.name}.open():"
 	getDevice().open()
 }
 
 def close() {
+	log.trace "${settings.name}.close():"
 	getDevice().close()
+
 }
 
-/**
-def arrived() {
+def arrive() {
+	log.trace "${settings.name}.arrive():"
 	getDevice().arrived()
-}
-**/
 
-def departed() {
+}
+
+def depart() {
+	log.trace "${settings.name}.depart():"
 	getDevice().departed()
 }
 
 
 private uninstalled() {
-    log.debug "do uninstall in gcal trigger"
+    log.trace "uninstalled():"
+    
+    log.info "Delete any existing messages in AskAlexa message queue."
+    askAlexaMsgQueueDelete() 
+    log.info "Delete all child devices."    
 	deleteAllChildren()
 }
 
 private deleteAllChildren() {
+    log.trace "deleteAllChildren():"
+    
     getChildDevices().each {
     	log.debug "Delete $it.deviceNetworkId"
         try {
@@ -204,11 +270,10 @@ private getDeviceID() {
     return "GCal_${app.id}"
 }
 
-private getDeviceHandler() { return "GCal Event Sensor" }		
 private getNamespace() { return "info_fiend" }
 private textVersion() {
     def text = "Trigger Version: ${ version() }"
 }
 private dVersion(){
-	def text = "Device Version: ${getDevice().version()}"
+	def text = "Device Version: ${getChildDevices()[0].version()}"
 }

@@ -211,7 +211,7 @@ def callback() {
 		uri: "https://www.googleapis.com",  
         
 		path: "/oauth2/v4/token",		
-        response_type: "code",
+		requestContentType: "application/x-www-form-urlencoded; charset=utf-8",
 		body: [
 			code: params.code,
 			client_secret: getAppClientSecret(),
