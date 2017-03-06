@@ -5,13 +5,12 @@
 Steps to set this up...
 
 1) Create a Google Project - https://console.developers.google.com and enable OAuth2 - see https://support.google.com/googleapi/answer/6158849
+
         a) Give your project any name (perhaps "ST-GCal")
         b) Enable the Calendar API - https://console.developers.google.com/apis/library
         c) Setup new credentials - https://console.developers.google.com/apis/credentials
 
-        d) Enable OAuth with a redirect URI 
-        
- --IMPORTANT - Your redirect URI will depend on the shard on which your ST system is on. For example,
+        d) Enable OAuth with a redirect URI - IMPORTANT!  Your redirect URI will depend on the shard on which your ST system is on. For example,
  
             - If you are on shard 1 (you access the IDE using https://graph.api.smartthings.com):
                 THEN use https://graph.api.smartthings.com/oauth/callback
@@ -19,7 +18,7 @@ Steps to set this up...
             - If you are on shard 2 (you access the IDE using https://graph-na02-useast1.api.smartthings.com):
                 THEN use https://graph-na02-useast1.api.smartthings.com/oauth/callback                
                 
-        e) Copy the Client ID and Client Secret from the credentials you just made.  Paste them in a text editor, as you will need these later
+        e) Copy the Client ID and Client Secret from the Google credentials you just made.  Paste them in a text editor, as you will need these later
         
 2) Install the 2 SmartApps "GCal Search" and "GCal Search Trigger" via your IDE
         https://graph.api.smartthings.com/ide/app/create
