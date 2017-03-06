@@ -1,5 +1,5 @@
 /**
- *  Copyright 2017 Mike Nestor / Anthony Pastor (2017 updates)
+ *  Copyright 2017 Mike Nestor & Anthony Pastor 
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -15,7 +15,7 @@
 definition (
     name: "GCal Search",
     namespace: "mnestor",
-    author: "Mike Nestor",
+    author: "Mike Nestor & Anthony Pastor",
     description: "Integrates SmartThings with Google Calendar events to trigger virtual event using contact sensor (or a virtual presence sensor).",
     category: "My Apps",
     iconUrl: "https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal.png",
@@ -38,7 +38,7 @@ mappings {
 }
 
 private version() {
-	def text = "20170302.1"
+	def text = "20170306.1"
 }
 
 def mainPage() {
@@ -417,5 +417,5 @@ private def textHelp() {
 }
 
 private def textContributors() {
-	def text = "Contributors:\nUI/UX: Michael Struck and Anthony Pastor"
+	def text = "Contributors:\nUI/UX: Michael Struck"
 }

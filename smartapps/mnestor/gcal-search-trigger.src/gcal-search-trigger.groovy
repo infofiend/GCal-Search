@@ -32,7 +32,7 @@
 definition(
     name: "GCal Search Trigger",
     namespace: "mnestor",
-    author: "Mike Nestor",
+    author: "Mike Nestor and Anthony Pastor",
     description: "Integrates SmartThings with Google Calendar to trigger events OR presence.",
     category: "My Apps",
     parent: "mnestor:GCal Search",
