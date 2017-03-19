@@ -38,7 +38,7 @@ mappings {
 }
 
 private version() {
-	def text = "20170306.1"
+	def text = "20170318.1"
 }
 
 def mainPage() {
@@ -54,8 +54,8 @@ def mainPage() {
             log.debug "RedirectUrl = ${redirectUrl}"
             
             section("Google Authentication"){
-                paragraph "Tap below to log in to Google and authorize SmartThings access."
-                href url:redirectUrl, style:"embedded", required:true, title:"", description:"Click to enter credentials"
+                paragraph "Tap below to log in to Google and authorize access for GCal Search."
+                href url:redirectUrl, style:"external", required:true, title:"", description:"Click to enter credentials"
             }
         } else {
             section(){
@@ -81,6 +81,7 @@ def pageAbout() {
 	}
 }
 def getCalendarList() {
+
     log.debug "getCalendarList()"
     refreshAuthToken()
     
@@ -93,13 +94,15 @@ def getCalendarList() {
     ]
 
     log.debug "calendar params: $calendarListParams"
-
+	
     def stats = [:]
+
     try {
         httpGet(calendarListParams) { resp ->
             resp.data.items.each { stat ->
                 stats[stat.id] = stat.summary
             }
+            
         }
     } catch (e) {
         log.debug "error: ${path}"
@@ -111,7 +114,9 @@ def getCalendarList() {
             log.error e.getResponse().getData()
         }
     }
-
+    
+	log.info "Calendars are ${stats}"
+    state.calendars = stats
     return stats
 }
 
@@ -177,10 +182,16 @@ def initialize() {
     childApps.each {child ->
         log.debug "child app: ${child.label}"
     }
-	log.info "clientId = ${clientId}"
-    log.info "clientSecret = ${clientSecret}"
+//	log.info "clientId = ${clientId}"
+//  log.info "clientSecret = ${clientSecret}"
     
     state.setup = true
+
+	getCalendarList()
+    
+    def cals = state.calendars
+	log.debug "Calendars are ${cals}" 	        
+   
 }
 
 def oauthInitUrl() {
@@ -190,7 +201,7 @@ def oauthInitUrl() {
 
    def oauthParams = [
       response_type: "code",
-      scope: "https://www.googleapis.com/auth/calendar.readonly",
+      scope: "https://www.googleapis.com/auth/calendar",
       client_id: getAppClientId(),
       state: atomicState.oauthInitState,
       access_type: "offline",
@@ -256,17 +267,19 @@ def isTokenExpired() {
 }
 
 def success() {
-        def message = """
-                <p>Your account is now connected to SmartThings!</p>
-                <p>Click 'Done' to finish setup.</p>
-        """
-        displayMessageAsHtml(message)
+//	atomicState.accessToken = createAccessToken()
+    def message = """
+    		<p>Your account is now connected to SmartThings!</p>
+            <p>Return to the SmartThings App and then </p>
+            <p>Click 'Done' to finish setup of GCal Search.</p>
+    """
+    displayMessageAsHtml(message)
 }
 
 def fail() {
     def message = """
-        <p>There was an error connecting your account with SmartThings</p>
-        <p>Please try again.</p>
+        <p>There was an error authorizing GCal Search with</p>
+        <p>your Google account.  Please try again.</p>
     """
     displayMessageAsHtml(message)
 }
@@ -417,5 +430,5 @@ private def textHelp() {
 }
 
 private def textContributors() {
-	def text = "Contributors:\nUI/UX: Michael Struck"
+	def text = "Contributors:\nUI/UX: Michael Struck \nOAuth: Gary Spender"
 }

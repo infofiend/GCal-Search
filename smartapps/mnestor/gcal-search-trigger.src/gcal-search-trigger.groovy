@@ -16,6 +16,7 @@
  *
  * Updates:
  *
+ * 20170318.1 - Fixed OAuth issues
  * 20170306.1 - Bug fixes; No search string now working; schedules fixed
  * 20170303.1 - Re-release version.  Added choice to make child device either contact or presence; conformed methods with updated DTH
  *
@@ -46,7 +47,7 @@ preferences {
 }
 
 private version() {
-	def text = "20170306.1"
+	def text = "20170318.1"
 }
 
 def selectCalendars() {
@@ -61,7 +62,7 @@ def selectCalendars() {
     } catch (e) {
     	return dynamicPage(name: "selectCalendars", title: "Missing Device", install: true, uninstall: false) {
         	section ("Error") {
-            	paragraph "We can't seem to create a child device, did you install the GCal Event Sensor device handler?"
+            	paragraph "We can't seem to create a child device, did you install both associated device type handler?"
             }
         }
     }
@@ -121,9 +122,9 @@ def initialize() {
     def device = getDevice()
     
     if (eventOrPresence == "Event") {
-	    device.label = "GCal Event:${settings.name}"
+	    device.label = "${settings.name} Events"
 	} else if (eventOrPresence == "Presence") {        
-	    device.label = "GCal Presence:${settings.name}"    
+	    device.label = "${settings.name} Presence"    
     }
     
     //Currently deletes the queue at midnight
@@ -135,10 +136,10 @@ def getDevice() {
     if (!childCreated()) {
 	    def calName = state.calName
     	if (eventOrPresence == "Event") {        	
-	        device = addChildDevice(getNamespace(), getEventDeviceHandler(), getDeviceID(), null, [label: "GCal Event:${settings.name}", calendar: watchCalendars, completedSetup: true])
+	        device = addChildDevice(getNamespace(), getEventDeviceHandler(), getDeviceID(), null, [label: "${settings.name} Events", calendar: watchCalendars, completedSetup: true])
             
     	} else if (eventOrPresence == "Presence") {
-			device = addChildDevice(getNamespace(), getPresenceDeviceHandler(), getDeviceID(), null, [label: "GCal Presence:${settings.name}", calendar: watchCalendars, completedSetup: true])
+			device = addChildDevice(getNamespace(), getPresenceDeviceHandler(), getDeviceID(), null, [label: "${settings.name}", calendar: watchCalendars, completedSetup: true])
             
 		}
 	} else {
