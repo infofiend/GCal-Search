@@ -12,7 +12,9 @@
  *
  * Updates:
  *
- * 20170306.1 - Scheduling updated 
+ * 20170321.1 - Added notification offset times.
+ *
+ * 20170306.1 - Scheduling updated. 
  * 				Fixed Event Trigger with no search string.
  *				Added AskAlexa Message Queue compatibility
  *               
@@ -72,6 +74,11 @@ metadata {
 			state("default", label:'OPEN', backgroundColor:"#53a7c0", action:"open")
 		}
         
+
+		standardTile("minutesOffset", "device.fake",inactiveLabe:false,  width: 3, height: 2, decoration: "flat") {
+			state("default", label:'${currentValue}')
+		}
+
         standardTile("refresh", "device.refresh", inactiveLabel: false, decoration: "flat", width:4, height: 2) {
             state "default", action:"refresh.refresh", icon:"st.secondary.refresh"
         }
@@ -86,6 +93,7 @@ metadata {
 }
 
 def installed() {
+    log.trace "GCalEventSensor::installed()"
     sendEvent(name: "switch", value: "off")
     sendEvent(name: "contact", value: "closed", isStateChange: true)
     
@@ -93,6 +101,7 @@ def installed() {
 }
 
 def updated() {
+    log.trace "GCalEventSensor::updated()"
 	initialize()
 }
 
@@ -124,11 +133,11 @@ def open() {
     log.debug "Scheduling Close for: ${closeTime}"
     sendEvent("name":"closeTime", "value":closeTime)
     parent.scheduleEvent("close", closeTime, [overwrite: true])
+    log.debug "SCHEDULING ENDMSG: parent.scheduleMsg(endMsg, ${modEnd}, ${endMsg}, '[overwrite: true]' )."
+    parent.scheduleMsg("endMsg", modEnd, endMsg, [overwrite: true])
     
-    //AskAlexaMsg    
-	def askAlexaMsg = device.currentValue("startMsg")	
-	parent.askAlexaStartMsgQueue(askAlexaMsg)        
 }
+
 
 def close() {
 	log.trace "close():"
@@ -137,8 +146,8 @@ def close() {
     sendEvent(name: "contact", value: "closed", isStateChange: true)           
     
     //AskAlexaMsg
-	def askAlexaMsg = device.currentValue("endMsg")	
-	parent.askAlexaEndMsgQueue(askAlexaMsg)    
+//	def askAlexaMsg = device.currentValue("endMsg")	
+//	parent.askAlexaEndMsgQueue(askAlexaMsg)    
            
 }
 
@@ -162,7 +171,7 @@ void poll() {
             	calName = event.organizer.displayName
            	}
             
-        	log.debug "We Haz Eventz! ${event}"
+        	log.debug "GCalEventSensor::We Haz Eventz! ${event}"
 
 	        def start
     	    def end
@@ -183,15 +192,50 @@ void poll() {
         	    end = sdf.parse(event.end.dateTime)
             }   
                         
+            def startOffset = parent.getStartOffset()?:0
+            def endOffset = parent.getEndOffset()?:0
+            log.debug "startOffset: ${startOffset} / endOffset: ${endOffset}"
+            
+            def modStart = start
+            def modEnd = end
+            def startTxt = "starts now"
+            def endTxt = "ends now"
+            
+            if (startOffset !=0) { 
+	            modStart = addMinutesToDate(startOffset, modStart)
+            }
+            if (endOffset !=0) { 
+	            modEnd = addMinutesToDate(endOffset, modEnd)
+            }
+                        
 	        def eventSummary = "Event: ${title}\n\n"
 			eventSummary += "Calendar: ${calName}\n\n"            
     	    def startHuman = start.format("EEE, hh:mm a", location.timeZone)
-        	eventSummary += "Opens: ${startHuman}\n"
+        	eventSummary += "Begins: ${startHuman}\n"
+	        def modStartHuman = modStart.format("EEE, hh:mm a", location.timeZone)
+            
+	        if (startOffset > 0) {
+                eventSummary += "Notification of event start will occur at ${modStartHuman}.\n\n"
+             	startTxt = "started at: " + startHuman 
+             } else if ( startOffset < 0) {            
+                eventSummary += "Notification of event start will occur at ${modStartHuman}.\n\n"
+             	startTxt = "starts at: " + startHuman                             
+	        }
+	        
 	        def endHuman = end.format("EEE, hh:mm a", location.timeZone)
-    	    eventSummary += "Closes: ${endHuman}\n\n"
-        	        	
-            def startMsg = "${type}vent ${title} started at: " + startHuman
-            def endMsg = "${type}vent ${title} ended at: " + endHuman
+    	    eventSummary += "Ends: ${endHuman}\n\n"
+	        def modEndHuman = modStart.format("EEE, hh:mm a", location.timeZone)
+            
+        	if (endOffset > 0) {
+                eventSummary += "Notification of event end will occur at ${modEndHuman}.\n\n"
+             	endTxt = "ended at: " + endHuman 
+             } else if ( endOffset < 0) {             
+                eventSummary += "Notification of event end will occur at ${modEndHuman}.\n\n"
+             	endTxt = "ends at: " + endHuman                              
+	        }
+        	                    	        	
+            def startMsg = "Event ${title} " + startTxt
+            def endMsg = "Event ${title} " + endTxt
 
 
             if (event.description) {
@@ -207,7 +251,7 @@ void poll() {
         	sendEvent("name":"endMsg", "value":endMsg)
 
 			sendEvent("name":"openTime", "value":start)           
-			sendEvent("name":"startMsg", "value":startMsg)
+		//	sendEvent("name":"startMsg", "value":startMsg)
             
       		// ALREADY IN EVENT?	        	                   
 	           // YES
@@ -228,14 +272,15 @@ void poll() {
 	            
                 log.debug "SCHEDULING OPEN: parent.scheduleEvent(open, ${start}, '[overwrite: true]' )."
         		parent.scheduleEvent("open", start, [overwrite: true])
-
+				log.debug "SCHEDULING STARTMSG: parent.scheduleMsg(startMsg, ${modStart}, ${startMsg}, '[overwrite: true]' )."
+                parent.scheduleMsg("startMsg", modStart, startMsg, [overwrite: true])
         	}            
         // END EVENT FOUND *******
 
 
         // START NO EVENT FOUND ******
     	} else {
-        	log.trace "No events - set all atributes to null."
+        	log.trace "No events - set all attributes to null."
 
 	    	sendEvent("name":"eventSummary", "value":"No events found", isStateChange: true)
             
@@ -244,6 +289,7 @@ void poll() {
                 close()                 
     	    } else { 
 				parent.unscheduleEvent("open")   
+                parent.unscheduleMsg("startMsg")   
     		}            
         }      
         // END NO EVENT FOUND
@@ -253,7 +299,15 @@ void poll() {
     }
 }
  
+private Date addMinutesToDate(int minutes, Date beforeTime){
+   //log.trace "addMinutesToDate"
+   final long ONE_MINUTE_IN_MILLISECONDS = 60000;
+
+   long currentTimeInMs = beforeTime.getTime()
+   Date afterAddingMinutes = new Date(currentTimeInMs + (minutes * ONE_MINUTE_IN_MILLISECONDS))
+   return afterAddingMinutes
+}
 
 def version() {
-	def text = "20170306.1"
+	def text = "20170321.1"
 }
