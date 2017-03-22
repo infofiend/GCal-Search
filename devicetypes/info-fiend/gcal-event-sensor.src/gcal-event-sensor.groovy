@@ -101,7 +101,7 @@ metadata {
             state "default", label:'${currentValue}'
         }
         
-        //Messaging
+        //Messaging (not used)
         valueTile("startMsg", "device.startMsg", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
             state "default", label:'startMsg: ${currentValue}'
         }
@@ -116,7 +116,7 @@ metadata {
         }
         
 		main "status"
-		details(["status", "refresh", "summary", "startMsgTime", "startMsg", "endMsgTime", "endMsg"])	//"closeBtn", "openBtn",
+		details(["status", "refresh", "summary"])	//"closeBtn", "openBtn",  , "startMsgTime", "startMsg", "endMsgTime", "endMsg"
 	}
 }
 
