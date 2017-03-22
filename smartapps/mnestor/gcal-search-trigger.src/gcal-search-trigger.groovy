@@ -16,7 +16,7 @@
  *
  * Updates:
  *
- * 20170318.1 - Fixed OAuth issues
+ * 201703121.1 - Fixed OAuth issues; added notification times offset option 
  * 20170306.1 - Bug fixes; No search string now working; schedules fixed
  * 20170303.1 - Re-release version.  Added choice to make child device either contact or presence; conformed methods with updated DTH
  *
@@ -34,7 +34,7 @@ definition(
     name: "GCal Search Trigger",
     namespace: "mnestor",
     author: "Mike Nestor and Anthony Pastor",
-    description: "Integrates SmartThings with Google Calendar to trigger events OR presence.",
+    description: "Integrates SmartThings with Google Calendar to trigger events, presence, and/or send start or end notifications.",
     category: "My Apps",
     parent: "mnestor:GCal Search",
     iconUrl: "https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal.png",
@@ -47,7 +47,7 @@ preferences {
 }
 
 private version() {
-	def text = "20170318.1"
+	def text = "20170321.1"
 }
 
 def selectCalendars() {
@@ -85,11 +85,20 @@ def selectCalendars() {
                 "\"#Holiday\" (anything with #Holiday)\n#Holiday (anything with Holiday, ignores the #)"
                 
             }
+                     
             section("Optional - AskAlexa Messages") {
             	input name:"wantStartMsgs", type: "enum", title: "Send notification of event start?", required: true, multiple: false, options: ["Yes", "No"], defaultValue: "No", submitOnChange: true
-            	
+				if (wantStartMsgs == "Yes") {
+                	paragraph "If you want the notification to occur before (use negative number) or after (use positive number) the START " +
+                    	      "of the calendar event, enter number of minutes to offset here."
+	                input name:"startOffset", type:"number", title:"Number of Minutes to Offset From Start of Calendar Event", required: false , range:"*..*"
+				}
                 input name:"wantEndMsgs", type: "enum", title: "Send notification of event end?", required: true, multiple: false, options: ["Yes", "No"], defaultValue: "No", submitOnChange: true                
-
+				if (wantEndMsgs == "Yes") {
+                	paragraph "If you want the notification to occur before (use negative number) or after (use positive number) the END " +
+                    	      "of the calendar event, enter number of minutes to offset here."
+	                input name:"endOffset", type:"number", title:"Number of Minutes to Offset From Start of Calendar Event", required: false , range:"*..*"
+				}
 	//			input name: "theTime", type: "time", title: "Time to clear AskAlexa message queue?", required: false, multiple: false
             }
             
@@ -132,6 +141,7 @@ def initialize() {
 }
 
 def getDevice() {
+log.trace "GCalSearchTrigger::getDevice()"
 	def device
     if (!childCreated()) {
 	    def calName = state.calName
@@ -150,9 +160,17 @@ def getDevice() {
 }
 
 def getNextEvents() {
-    log.debug "getNextEvents() child"
+    log.trace "GCalSearchTrigger::getNextEvents() child"
     def search = (!settings.search) ? "" : settings.search
     return parent.getNextEvents(settings.watchCalendars, search)
+}
+
+def getStartOffset() {
+   return (!settings.startOffset) ?"" : settings.startOffset
+}
+
+def getEndOffset() {
+   return (!settings.endOffset) ?"" : settings.endOffset
 }
 
 private getPresenceDeviceHandler() { return "GCal Presence Sensor" }
@@ -160,6 +178,7 @@ private getEventDeviceHandler() { return "GCal Event Sensor" }
 
 
 def refresh() {
+	log.trace "GCalSearchTrigger::refresh()"
 	try { unschedule(poll) } catch (e) {  }
     
     runEvery15Minutes(poll)
@@ -169,25 +188,26 @@ def poll() {
 	getDevice().poll()
 }
 
-private askAlexaStartMsgQueue(msgText) {
+private startMsg() {
     if (settings.wantStartMsgs == "Yes") {
-		log.trace "askAlexaStartMsgQueue ( ${msgText} ):"
+		log.trace "startMsg():"
     	def myApp = settings.name
-    
+    	def msgText = state.startMsg ?: "Error finding start message"
+        
 		sendLocationEvent(name: "AskAlexaMsgQueue", value: myApp, isStateChange: true, descriptionText: msgText, unit: myApp)  
 	} else {
     	log.trace "No Start Msgs"
 	}    
 }
 
-private askAlexaEndMsgQueue(msgText) {
+private endMsg() {
     if (settings.wantEndMsgs == "Yes") {
-		log.trace "askAlexaEndMsgQueue ( ${msgText} ):"
+		log.trace "endMsg():"
     	def myApp = settings.name
-    
+    	def msgText = state.endMsg ?: "Error finding end message"
+        
 		sendLocationEvent(name: "AskAlexaMsgQueue", value: myApp, isStateChange: true, descriptionText: msgText, unit: myApp)  
-	
-    } else {
+	} else {
     	log.trace "No End Msgs"
 	}    
 }
@@ -211,8 +231,28 @@ def scheduleEvent(method, time, args) {
 	runOnce( time, method, args)	
 }
 
+def scheduleMsg(method, time, msg, args) {
+    def device = getDevice()
+    if (method == "startMsg") {
+    	log.info "Saving ${msg} as state.startMsg ."
+    	state.startMsg = msg
+	} else {
+    	log.info "Saving ${msg} as state.endMsg ."    
+    	state.endMsg = msg
+    }
+   	log.trace "scheduleMsg( ${method}, ${time}, ${args} ) from ${device}." 
+	runOnce( time, method, args)	
+}
+
 def unscheduleEvent(method) {
 	log.trace "unscheduleEvent( ${method} )" 
+    try { 
+    	unschedule( "${method}" ) 
+    } catch (e) {}       
+}
+
+def unscheduleMsg(method) {
+	log.trace "unscheduleMsg( ${method} )" 
     try { 
     	unschedule( "${method}" ) 
     } catch (e) {}       

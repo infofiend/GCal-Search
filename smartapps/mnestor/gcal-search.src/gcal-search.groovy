@@ -38,14 +38,17 @@ mappings {
 }
 
 private version() {
-	def text = "20170318.1"
+	def text = "20170321.1"
 }
 
 def mainPage() {
-	if(!atomicState.accessToken) {
+	if (!atomicState.accessToken) {
         log.debug "about to create access token"
         atomicState.authToken = null
         atomicState.accessToken = createAccessToken()
+    } else {
+    	state.myCals = getCalendarList()
+        
     }
     
     return dynamicPage(name: "authentication", uninstall: false) {
@@ -81,8 +84,7 @@ def pageAbout() {
 	}
 }
 def getCalendarList() {
-
-    log.debug "getCalendarList()"
+    log.trace "getCalendarList()"
     refreshAuthToken()
     
     def path = "/calendar/v3/users/me/calendarList"
@@ -115,13 +117,24 @@ def getCalendarList() {
         }
     }
     
-	log.info "Calendars are ${stats}"
+//    def myCals = stats
+    def i=1
+    def calList = ""
+    def calCount = stats.size()
+    calList = calList + "\nYou have ${calCount} available Gcal calendars (Calendar Name - calendarId): \n\n"
+    stats.each {
+     	calList = calList + "(${i})  ${it.value} - ${it.key} \n"
+        i = i+1
+	}
+           
+    log.info calList
+    
     state.calendars = stats
     return stats
 }
 
 def getNextEvents(watchCalendars, search) {
-    log.debug "getting event list"
+    log.trace "getting event list"
     refreshAuthToken()
     
     def pathParams = [
@@ -161,22 +174,24 @@ def getNextEvents(watchCalendars, search) {
             log.error e.getResponse().getData()
         }
     }
+    
+   log.debug evs
    return evs
 }
 
 def installed() {
-   log.debug "Installed with settings: ${settings}"
+   log.trace "Installed with settings: ${settings}"
    initialize()
 }
 
 def updated() {
-   log.debug "Updated with settings: ${settings}"
+   log.trace "Updated with settings: ${settings}"
    unsubscribe()
    initialize()
 }
 
 def initialize() {
-    log.debug "initialize"
+    log.trace "GCalSearch::initialize"
 
     log.debug "there are ${childApps.size()} child smartapps"
     childApps.each {child ->
@@ -195,7 +210,7 @@ def initialize() {
 }
 
 def oauthInitUrl() {
-   log.debug "oauthInitUrl"
+   log.trace "GCalSearch::oauthInitUrl"
    
    atomicState.oauthInitState = UUID.randomUUID().toString()
 
@@ -212,6 +227,9 @@ def oauthInitUrl() {
 }
 
 def callback() {
+
+	 log.trace "GCalSearch::callback"
+
 	log.debug "atomicState.oauthInitState ${atomicState.oauthInitState}"
     log.debug "params.state ${params.state}"
     log.debug "callback() >> params: $params, params.code ${params.code}"
@@ -272,6 +290,8 @@ def success() {
     		<p>Your account is now connected to SmartThings!</p>
             <p>Return to the SmartThings App and then </p>
             <p>Click 'Done' to finish setup of GCal Search.</p>
+            <p> </p>
+            <p> ${calList} </p>
     """
     displayMessageAsHtml(message)
 }
@@ -301,7 +321,7 @@ def displayMessageAsHtml(message) {
 }
 
 private refreshAuthToken() {
-    log.debug "refreshing auth token"
+    log.trace "GCalSearch::refreshAuthToken"
     if(!atomicState.refreshToken) {
         log.warn "Can not refresh OAuth token since there is no refreshToken stored"
         log.debug state
@@ -368,6 +388,9 @@ def childUninstalled() {
 }
 
 def revokeAccess() {
+
+    log.trace "GCalSearch::revokeAccess"
+
 	refreshAuthToken()
 	
 	if (!atomicState.authToken) {
