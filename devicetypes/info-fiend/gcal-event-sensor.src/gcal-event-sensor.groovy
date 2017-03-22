@@ -12,6 +12,9 @@
  *
  * Updates:
  *
+ * 20170322.1 - startMsgTime, startMsg, endMsgTime, and endMsg are now attributes that can be used in CoRE
+ 			  - cleaned up variables and code.
+ *
  * 20170321.1 - Added notification offset times.
  *
  * 20170306.1 - Scheduling updated. 
@@ -48,11 +51,14 @@ metadata {
         
         attribute "calendar", "json_object"
         attribute "calName", "string"
+        attribute "name", "string"
         attribute "eventSummary", "string"
         attribute "openTime", "number"
-        attribute "closeTime", "number"		
-		attribute "startMsg", "string"
-        attribute "endMsg", "string"        
+        attribute "closeTime", "number"				        
+        attribute "startMsgTime", "number"
+        attribute "startMsg", "string"
+        attribute "endMsg", "string"
+        attribute "endMsgTime", "number"
 	}
 
 	simulator {
@@ -65,35 +71,57 @@ metadata {
 			state("closed", label:'', icon:"https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal-Off@2x.png", backgroundColor:"#79b821")
 			state("open", label:'', icon:"https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal-On@2x.png", backgroundColor:"#ffa81e")
 		}
-        
+
+        //Open & Close Button Tiles	(not used)
         standardTile("closeBtn", "device.fake", width: 3, height: 2, decoration: "flat") {
 			state("default", label:'CLOSE', backgroundColor:"#CCCC00", action:"close")
 		}
-
 		standardTile("openBtn", "device.fake", width: 3, height: 2, decoration: "flat") {
 			state("default", label:'OPEN', backgroundColor:"#53a7c0", action:"open")
 		}
         
-
-		standardTile("minutesOffset", "device.fake",inactiveLabe:false,  width: 3, height: 2, decoration: "flat") {
-			state("default", label:'${currentValue}')
-		}
-
+        //Refresh        
         standardTile("refresh", "device.refresh", inactiveLabel: false, decoration: "flat", width:4, height: 2) {
             state "default", action:"refresh.refresh", icon:"st.secondary.refresh"
         }
-                
+
+        //Event Summary
         valueTile("summary", "device.eventSummary", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
             state "default", label:'${currentValue}'
         }
         
+        //Event Info (not used)        
+        valueTile("calendar", "device.calendar", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'${currentValue}'
+        }
+        valueTile("calName", "device.calName", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'${currentValue}'
+        }
+        valueTile("name", "device.name", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'${currentValue}'
+        }
+        
+        //Messaging
+        valueTile("startMsg", "device.startMsg", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'startMsg: ${currentValue}'
+        }
+        valueTile("startMsgTime", "device.startMsgTime", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'startMsgTime: ${currentValue}'
+        }
+        valueTile("endMsg", "device.endMsg", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'endMsg: ${currentValue}'
+        }
+        valueTile("endMsgTime", "device.endMsgTime", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'endMsgTime: ${currentValue}'
+        }
+        
 		main "status"
-		details(["status", "refresh", "summary"])	//"closeBtn", "openBtn",
+		details(["status", "refresh", "summary", "startMsgTime", "startMsg", "endMsgTime", "endMsg"])	//"closeBtn", "openBtn",
 	}
 }
 
 def installed() {
-    log.trace "GCalEventSensor::installed()"
+    log.trace "GCalEventSensor: installed()"
     sendEvent(name: "switch", value: "off")
     sendEvent(name: "contact", value: "closed", isStateChange: true)
     
@@ -101,12 +129,13 @@ def installed() {
 }
 
 def updated() {
-    log.trace "GCalEventSensor::updated()"
+    log.trace "GCalEventSensor: updated()"
 	initialize()
 }
 
 def initialize() {
 	
+    
 
 }
 
@@ -116,7 +145,7 @@ def parse(String description) {
 
 // refresh status
 def refresh() {
-	log.trace "refresh()"
+	log.trace "GCalEventSensor: refresh()"
     
     parent.refresh() // reschedule poll
     poll() // and do one now
@@ -124,139 +153,154 @@ def refresh() {
 }
 
 def open() {
-	log.trace "open():"
+	log.trace "GCalEventSensor: open()"
         
     sendEvent(name: "switch", value: "on")
 	sendEvent(name: "contact", value: "open", isStateChange: true)
 
-	def closeTime = new Date( device.currentState("closeTime").value )	
+	//Schedule Close & endMsg
+    try {
+		def rawCloseTime = device.currentValue("closeTime")
+		def closeTime = new Date( rawCloseTime )
+	    def rawEndMsgTime = device.currentValue("endMsgTime")
+    	def endMsgTime = new Date( rawEndMsgTime )    
+	    log.debug "Device's rawCloseTime = ${rawEndMsgTime} & closeTime = ${endMsgTime}"
+        log.debug "Device's rawEndMsgTime = ${rawEndMsgTime} & endMsgTime = ${endMsgTime}"
+        
+	    def endMsg = device.currentValue("endMsg") ?: "No End Message"
+        log.debug "Device's endMsg = ${endMsg}"
+        
+    } catch (e) {
+    	log.warn "Failed to get currentValue for Close or endMsg: ${e}"
+    }
+    
     log.debug "Scheduling Close for: ${closeTime}"
     sendEvent("name":"closeTime", "value":closeTime)
     parent.scheduleEvent("close", closeTime, [overwrite: true])
-    log.debug "SCHEDULING ENDMSG: parent.scheduleMsg(endMsg, ${modEnd}, ${endMsg}, '[overwrite: true]' )."
-    parent.scheduleMsg("endMsg", modEnd, endMsg, [overwrite: true])
+    log.debug "SCHEDULING ENDMSG: parent.scheduleMsg(endMsg, ${endMsgTime}, ${endMsg}, '[overwrite: true]' )."
+    parent.scheduleMsg("endMsg", endMsgTime, endMsg, [overwrite: true])
     
 }
 
 
 def close() {
-	log.trace "close():"
+	log.trace "GCalEventSensor: close()"
     
     sendEvent(name: "switch", value: "off")
     sendEvent(name: "contact", value: "closed", isStateChange: true)           
     
-    //AskAlexaMsg
-//	def askAlexaMsg = device.currentValue("endMsg")	
-//	parent.askAlexaEndMsgQueue(askAlexaMsg)    
-           
 }
 
 void poll() {
     log.trace "poll()"
     def items = parent.getNextEvents()
-    try {
-    
+    try {	                 
+            
 	    def currentState = device.currentValue("contact") ?: "closed"
     	def isOpen = currentState == "open"
-	    log.debug "isOpen is currently: ${isOpen}"
+//	    log.debug "isOpen is currently: ${isOpen}"
     
-        // START EVENT FOUND **********
+        // EVENT FOUND **********
     	if (items && items.items && items.items.size() > 0) {        
-	        //	Only process the next scheduled event 
-    	    def event = items.items[0]
-        	def title = event.summary
-            
-            def calName = "GCal Primary"
-            if ( event.organizer.displayName ) {
-            	calName = event.organizer.displayName
-           	}
-            
-        	log.debug "GCalEventSensor::We Haz Eventz! ${event}"
 
-	        def start
-    	    def end
+			// Get Calendar Name 
+			def calName = "Primary Calendar"
+	        if ( event?.organizer?.displayName ) {
+    	       	calName = event.organizer.displayName
+        	}
+	        sendEvent("name":"calName", "value":calName, displayed: false)  
+            
+			//	Only process the next scheduled event 
+    	    def event = items.items[0]
+        	def title = event.summary                       
+            
+        	log.debug "GCalEventSensor: We Haz Eventz! ${event}"
+
+			// Get event start and end times
+	        def startTime
+    	    def endTime
             def type = "E"
         	
         	if (event.start.containsKey('date')) {
-        	//	this is for all-day events            	
+	        	//	this is for all-day events            	
 				type = "All-day e"   				             
     	        def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd")
         	    sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))            	
-                start = sdf.parse(event.start.date)                
-    	        end = new Date(sdf.parse(event.end.date).time - 60)   
+                startTime = sdf.parse(event.start.date)                
+    	        endTime = new Date(sdf.parse(event.end.date).time - 60)   
 	        } else {            	
-			//	this is for timed events            	            
+				//	this is for timed events            	            
         	    def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss")
             	sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))	            
-                start = sdf.parse(event.start.dateTime)
-        	    end = sdf.parse(event.end.dateTime)
-            }   
-                        
-            def startOffset = parent.getStartOffset()?:0
-            def endOffset = parent.getEndOffset()?:0
-            log.debug "startOffset: ${startOffset} / endOffset: ${endOffset}"
-            
-            def modStart = start
-            def modEnd = end
-            def startTxt = "starts now"
-            def endTxt = "ends now"
-            
-            if (startOffset !=0) { 
-	            modStart = addMinutesToDate(startOffset, modStart)
+                startTime = sdf.parse(event.start.dateTime)
+        	    endTime = sdf.parse(event.end.dateTime)
+            }   			
+
+			// Build Notification Times & Messages
+            def startMsgWanted = parent.checkMsgWanted("startMsg")
+			def startMsgTime = startTime
+			if (startMsgWanted) {
+				def startOffset = parent.getStartOffset()?:0            
+       		    if (startOffset !=0) { 
+		            startMsgTime = msgTimeOffset(startOffset, startMsgTime)
+					log.debug "startOffset: ${startOffset} / startMsgTime = ${startMsgTime}"
+				}            
             }
-            if (endOffset !=0) { 
-	            modEnd = addMinutesToDate(endOffset, modEnd)
-            }
-                        
+            
+            def endMsgWanted = parent.checkMsgWanted("endMsg")
+           	def endMsgTime = endTime                      
+            if (endMsgWanted) {
+				def endOffset = parent.getEndOffset()?:0            
+       	    	if (endOffset !=0) { 
+	        	    endMsgTime = msgTimeOffset(endOffset, endMsgTime)
+		            log.debug "endOffset: ${endOffset} / endMsgTime = ${endMsgTime}}"                        
+                }               
+			}
+            
+			// Build Event Summary
 	        def eventSummary = "Event: ${title}\n\n"
-			eventSummary += "Calendar: ${calName}\n\n"            
-    	    def startHuman = start.format("EEE, hh:mm a", location.timeZone)
-        	eventSummary += "Begins: ${startHuman}\n"
-	        def modStartHuman = modStart.format("EEE, hh:mm a", location.timeZone)
-            
-	        if (startOffset > 0) {
-                eventSummary += "Notification of event start will occur at ${modStartHuman}.\n\n"
-             	startTxt = "started at: " + startHuman 
-             } else if ( startOffset < 0) {            
-                eventSummary += "Notification of event start will occur at ${modStartHuman}.\n\n"
-             	startTxt = "starts at: " + startHuman                             
-	        }
+			eventSummary += "Calendar: ${calName}\n\n"   
+    	    def startTimeHuman = startTime.format("EEE, hh:mm a", location.timeZone)
+        	eventSummary += "Begins: ${startTimeHuman}\n"
 	        
-	        def endHuman = end.format("EEE, hh:mm a", location.timeZone)
-    	    eventSummary += "Ends: ${endHuman}\n\n"
-	        def modEndHuman = modStart.format("EEE, hh:mm a", location.timeZone)
-            
-        	if (endOffset > 0) {
-                eventSummary += "Notification of event end will occur at ${modEndHuman}.\n\n"
-             	endTxt = "ended at: " + endHuman 
-             } else if ( endOffset < 0) {             
-                eventSummary += "Notification of event end will occur at ${modEndHuman}.\n\n"
-             	endTxt = "ends at: " + endHuman                              
+            def startMsg = "No Start Msg Wanted"
+            if (startMsgWanted) {
+	            def startMsgTimeHuman = startTime.format("EEE, hh:mm a", location.timeZone)            
+                startMsg = "${type}vent ${title} occurs at " + startMsgTimeHuman                
+				eventSummary += "Notfication of ${startMsg}.\n\n"
 	        }
-        	                    	        	
-            def startMsg = "Event ${title} " + startTxt
-            def endMsg = "Event ${title} " + endTxt
-
-
-            if (event.description) {
-	            eventSummary += event.description ? event.description : ""
-    		}    
-                      
-       	    sendEvent("name":"eventSummary", "value":eventSummary, isStateChange: true)
             
-			//Set the closeTime and endMeg before opening an event in progress
-	        //Then use in the open() call for scheduling close and askAlexaMsgQueue
-        	
-            sendEvent("name":"closeTime", "value":end)           
-        	sendEvent("name":"endMsg", "value":endMsg)
+	        def endTimeHuman = endTime.format("EEE, hh:mm a", location.timeZone)
+    	    eventSummary += "Ends: ${endTimeHuman}\n\n"
 
-			sendEvent("name":"openTime", "value":start)           
-		//	sendEvent("name":"startMsg", "value":startMsg)
+            def endMsg = "No End Msg Wanted"
+			if (endMsgWanted) {
+		        def endMsgTimeHuman = endTime.format("EEE, hh:mm a", location.timeZone)            
+	            endMsg = "${type}vent ${title} ends at " + endMsgTimeHuman                
+				eventSummary += "Notfication of ${endMsg}.\n\n"
+        	}
+            
+//            if (event.description) {
+//	            eventSummary += event.description ? event.description : ""
+//    		}
+
+       	    sendEvent("name":"eventSummary", "value":eventSummary, isStateChange: true)
+			
+            //Set the closeTime, endMsgTime, and endMsg before opening an event in progress
+	        //  --for use in the open() call for scheduling close and end event notification
+            sendEvent("name":"closeTime", "value":endTime, displayed: false)           
+			sendEvent("name":"endMsgTime", "value":endMsgTime, displayed: false)
+            sendEvent("name":"endMsg", "value":"${endMsg}", displayed: false)                        
+
+			//Set the openTime, startMsgTime, and startMsg 
+			sendEvent("name":"openTime", "value":startTime, displayed: false)
+			sendEvent("name":"startMsgTime", "value":startMsgTime, displayed: false)            
+			sendEvent("name":"startMsg", "value":"${startMsg}", displayed: false)
             
       		// ALREADY IN EVENT?	        	                   
 	           // YES
-        	if ( start <= new Date() ) {
-        		log.debug "Already in event ${title}."
+        	if ( startTime <= new Date() ) {
+        		log.debug "Already in ${type}vent ${title}."
 	        	if (!isOpen) {                     
             		log.debug "Contact currently closed, so opening."                    
                     open()                     
@@ -264,17 +308,19 @@ void poll() {
 
                 // NO                        
 	        } else {
-            	log.debug "Event ${title} still in future."
+            	log.debug "${type}vent ${title} still in future."
 	        	if (isOpen) { 				
                     log.debug "Contact incorrectly open, so close."
                     close()                     
 				}                 
 	            
-                log.debug "SCHEDULING OPEN: parent.scheduleEvent(open, ${start}, '[overwrite: true]' )."
-        		parent.scheduleEvent("open", start, [overwrite: true])
-				log.debug "SCHEDULING STARTMSG: parent.scheduleMsg(startMsg, ${modStart}, ${startMsg}, '[overwrite: true]' )."
-                parent.scheduleMsg("startMsg", modStart, startMsg, [overwrite: true])
-        	}            
+                // Schedule Open & start event messaging
+                log.debug "SCHEDULING OPEN: parent.scheduleEvent(open, ${startTime}, '[overwrite: true]' )."
+        		parent.scheduleEvent("open", startTime, [overwrite: true])
+				log.debug "SCHEDULING STARTMSG: parent.scheduleMsg(startMsg, ${startMsgTime}, ${startMsg}, '[overwrite: true]' )."
+                parent.scheduleMsg("startMsg", startMsgTime, startMsg, [overwrite: true])
+        	}
+                               
         // END EVENT FOUND *******
 
 
@@ -299,15 +345,15 @@ void poll() {
     }
 }
  
-private Date addMinutesToDate(int minutes, Date beforeTime){
-   //log.trace "addMinutesToDate"
+private Date msgTimeOffset(int minutes, Date originalTime){
+   log.trace "Gcal Event Sensor: msgTimeOffset()"
    final long ONE_MINUTE_IN_MILLISECONDS = 60000;
 
-   long currentTimeInMs = beforeTime.getTime()
-   Date afterAddingMinutes = new Date(currentTimeInMs + (minutes * ONE_MINUTE_IN_MILLISECONDS))
-   return afterAddingMinutes
+   long currentTimeInMs = originalTime.getTime()
+   Date offsetTime = new Date(currentTimeInMs + (minutes * ONE_MINUTE_IN_MILLISECONDS))
+   return offsetTime
 }
 
 def version() {
-	def text = "20170321.1"
+	def text = "20170322.1"
 }
