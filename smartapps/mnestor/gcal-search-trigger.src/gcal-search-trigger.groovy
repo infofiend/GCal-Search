@@ -16,7 +16,8 @@
  *
  * Updates:
  *
- * 201703121.1 - Fixed OAuth issues; added notification times offset option 
+ * 20170322.1 - added checkMsgWanted(); made tips on screen hideable & hidden 
+ * 20170321.1 - Fixed OAuth issues; added notification times offset option 
  * 20170306.1 - Bug fixes; No search string now working; schedules fixed
  * 20170303.1 - Re-release version.  Added choice to make child device either contact or presence; conformed methods with updated DTH
  *
@@ -47,7 +48,7 @@ preferences {
 }
 
 private version() {
-	def text = "20170321.1"
+	def text = "20170322.1"
 }
 
 def selectCalendars() {
@@ -68,7 +69,7 @@ def selectCalendars() {
     }
     
     return dynamicPage(name: "selectCalendars", title: "Create new calendar search", install: true, uninstall: childCreated()) {
-            section("Required") {
+            section("Required Info") {
                 input name: "name", type: "text", title: "Assign a Name", required: true, multiple: false
                 
                 //we can't do multiple calendars because the api doesn't support it and it could potentially cause a lot of traffic to happen
@@ -76,30 +77,37 @@ def selectCalendars() {
                 
                 input name: "eventOrPresence", title:"", type: "enum", required:true, multiple:false, description: "Do you want this gCal Search Trigger to control an Event or a Virtual Presence?", options:["Event", "Presence"]
             }
-            section("Free-Form Search") {
-                input name: "search", type: "text", title: "Search String", required: false
+            section("Optional - Event Filter") {
+                input name: "search", type: "text", title: "Search String", required: false                                
+            }
+            section("Event Filter Tips", hideable:true, hidden:true) {
                 paragraph "Leave search blank to match every event on the selected calendar(s)"
                 paragraph "Searches for entries that have all terms\n\nTo search for an exact phrase, " +
                 "enclose the phrase in quotation marks: \"exact phrase\"\n\nTo exclude entries that " +
                 "match a given term, use the form -term\n\nExamples:\nHoliday (anything with Holiday)\n" +
                 "\"#Holiday\" (anything with #Holiday)\n#Holiday (anything with Holiday, ignores the #)"
-                
-            }
-                     
-            section("Optional - AskAlexa Messages") {
+			}
+
+            section("Optional - Receive Event Notifications using Ask Alexa") {
             	input name:"wantStartMsgs", type: "enum", title: "Send notification of event start?", required: true, multiple: false, options: ["Yes", "No"], defaultValue: "No", submitOnChange: true
-				if (wantStartMsgs == "Yes") {
-                	paragraph "If you want the notification to occur before (use negative number) or after (use positive number) the START " +
-                    	      "of the calendar event, enter number of minutes to offset here."
+				if (wantStartMsgs == "Yes") {                	
 	                input name:"startOffset", type:"number", title:"Number of Minutes to Offset From Start of Calendar Event", required: false , range:"*..*"
 				}
+                
                 input name:"wantEndMsgs", type: "enum", title: "Send notification of event end?", required: true, multiple: false, options: ["Yes", "No"], defaultValue: "No", submitOnChange: true                
 				if (wantEndMsgs == "Yes") {
-                	paragraph "If you want the notification to occur before (use negative number) or after (use positive number) the END " +
-                    	      "of the calendar event, enter number of minutes to offset here."
-	                input name:"endOffset", type:"number", title:"Number of Minutes to Offset From Start of Calendar Event", required: false , range:"*..*"
+	                input name:"endOffset", type:"number", title:"Number of Minutes to Offset From End of Calendar Event", required: false , range:"*..*"
 				}
-	//			input name: "theTime", type: "time", title: "Time to clear AskAlexa message queue?", required: false, multiple: false
+            }
+            section("Notification Time Tips", hideable:true, hidden:true) {            
+            	paragraph "If you want the notification to occur BEFORE the start/end of the event, " + 
+                  		  "then use a negative number for offset time.  For example, to receive a " +
+                          "notification 5 minutes beforehand, use an an offset of -5. \n\n" +
+                          "If you want the notification to occur AFTER the start/end of the event, " +
+                          "then use positive number for offset time.  For example, to receive a " +
+                          "notification 9 hours after event start, use an an offset of 540 (can be " +
+                          "helpful for all-day events, which start at midnight)." 
+                 	      "of the calendar event, enter number of minutes to offset here."
             }
             
             if (childCreated()){
@@ -258,6 +266,18 @@ def unscheduleMsg(method) {
     } catch (e) {}       
 }
 
+def checkMsgWanted(type) {
+	def isWanted = false
+	if (type == "startMsg") {
+		if (wantStartMsgs=="Yes") {isWanted = true} 
+    } else if (type == "endMsg") {
+		if (wantEndMsgs=="Yes") {isWanted = true}
+    }
+    
+    log.debug "${type} Msgs Wanted? = ${isWanted}"
+    return isWanted    
+}
+
 def open() {
 	log.trace "${settings.name}.open():"
 	getDevice().open()
@@ -312,6 +332,7 @@ private getDeviceID() {
 }
 
 private getNamespace() { return "info_fiend" }
+
 private textVersion() {
     def text = "Trigger Version: ${ version() }"
 }
