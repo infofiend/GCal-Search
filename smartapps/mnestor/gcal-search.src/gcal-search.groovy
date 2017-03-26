@@ -21,14 +21,14 @@ definition (
     iconUrl: "https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal.png",
     iconX2Url: "https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal%402x.png",
     iconX3Url: "https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal%402x.png",
-    singleInstance: true,
+    singleInstance: false,
 ) {
    appSetting "clientId"
    appSetting "clientSecret"
 }
 
 preferences {
-	page(name: "authentication", title: "Google Calendar", content: "mainPage", submitOnChange: true, uninstall: false, install: true)
+	page(name: "authentication", title: "Google Calendar Triggers", content: "mainPage", submitOnChange: true, uninstall: false, install: true)
 	page name: "pageAbout"
 }
 
@@ -38,21 +38,29 @@ mappings {
 }
 
 private version() {
-	def text = "20170321.1"
+	def text = "20170326.1"
 }
 
 def mainPage() {
-	if (!atomicState.accessToken) {
-        log.debug "about to create access token"
+   log.trace "mainPage(): appId = ${app.id}, apiServerUrl = ${ getApiServerUrl() }"
+   
+   if (!atomicState.accessToken) {
+        log.debug "No access token found - calling createAccessToken()"
         atomicState.authToken = null
         atomicState.accessToken = createAccessToken()
     } else {
+	    log.debug "Access token ${atomicState.accessToken} found - saving list of calendars."
     	state.myCals = getCalendarList()
-        
+        if (!atomicState.refreshToken) {
+        	log.debug "BUT...No refresh token found."
+        } else {
+        	log.debug "Refresh token ${atomicState.refreshToken} found"
+		}            
     }
     
     return dynamicPage(name: "authentication", uninstall: false) {
         if (!atomicState.authToken) {
+	        log.debug "No authToken found."
             def redirectUrl = "https://graph.api.smartthings.com/oauth/initialize?appId=${app.id}&access_token=${atomicState.accessToken}&apiServerUrl=${getApiServerUrl()}"
             log.debug "RedirectUrl = ${redirectUrl}"
             
@@ -61,8 +69,9 @@ def mainPage() {
                 href url:redirectUrl, style:"external", required:true, title:"", description:"Click to enter credentials"
             }
         } else {
+	        log.debug "authToken ${atomicState.authToken} found."
             section(){
-                app(name: "childApps", appName: "GCal Search Trigger", namespace: "mnestor", title: "New GCal Search...", multiple: true)
+                app(name: "childApps", appName: "GCal Search Trigger", namespace: "mnestor", title: "New Trigger...", multiple: true)
             }
             section("Options"){
             	href "pageAbout", title: "About ${textAppName()}", description: "Tap to get application version, license, instructions or remove the application"
@@ -83,8 +92,43 @@ def pageAbout() {
         }
 	}
 }
+
+
+
+def installed() {
+   log.trace "Installed with settings: ${settings}"
+   initialize()
+}
+
+def updated() {
+   log.trace "Updated with settings: ${settings}"
+   unsubscribe()
+   initialize()
+}
+
+def initialize() {
+    log.trace "GCalSearch: initialize()"
+
+    log.debug "There are ${childApps.size()} GCal Search Triggers"
+    childApps.each {child ->
+        log.debug "child app: ${child.label}"
+    }
+//	log.info "clientId = ${clientId}"
+//  log.info "clientSecret = ${clientSecret}"
+    
+    state.setup = true
+
+/**	getCalendarList()
+    
+    def cals = state.calendars
+	log.debug "Calendars are ${cals}" 	        
+**/   
+}
+
+
+
 def getCalendarList() {
-    log.trace "getCalendarList()"
+    log.trace "getCalendarList() - calling refreshAuthToken()"
     refreshAuthToken()
     
     def path = "/calendar/v3/users/me/calendarList"
@@ -179,56 +223,28 @@ def getNextEvents(watchCalendars, search) {
    return evs
 }
 
-def installed() {
-   log.trace "Installed with settings: ${settings}"
-   initialize()
-}
-
-def updated() {
-   log.trace "Updated with settings: ${settings}"
-   unsubscribe()
-   initialize()
-}
-
-def initialize() {
-    log.trace "GCalSearch::initialize"
-
-    log.debug "there are ${childApps.size()} child smartapps"
-    childApps.each {child ->
-        log.debug "child app: ${child.label}"
-    }
-//	log.info "clientId = ${clientId}"
-//  log.info "clientSecret = ${clientSecret}"
-    
-    state.setup = true
-
-	getCalendarList()
-    
-    def cals = state.calendars
-	log.debug "Calendars are ${cals}" 	        
-   
-}
-
 def oauthInitUrl() {
-   log.trace "GCalSearch::oauthInitUrl"
+	log.trace "GCalSearch: oauthInitUrl()"
    
-   atomicState.oauthInitState = UUID.randomUUID().toString()
+	atomicState.oauthInitState = UUID.randomUUID().toString()
+	def cid = getAppClientId()
 
-   def oauthParams = [
-      response_type: "code",
-      scope: "https://www.googleapis.com/auth/calendar",
-      client_id: getAppClientId(),
-      state: atomicState.oauthInitState,
-      access_type: "offline",
-      redirect_uri: "https://graph.api.smartthings.com/oauth/callback"
-   ]
+	def oauthParams = [
+    	response_type: "code",
+      	scope: "https://www.googleapis.com/auth/calendar",
+      	client_id: cid,
+      	state: atomicState.oauthInitState,
+      	include_granted_scopes: "true",
+      	access_type: "offline",
+      	redirect_uri: "https://graph.api.smartthings.com/oauth/callback"
+   	]
 
-   redirect(location: "https://accounts.google.com/o/oauth2/v2/auth?" + toQueryString(oauthParams))
+   	redirect(location: "https://accounts.google.com/o/oauth2/v2/auth?" + toQueryString(oauthParams))
 }
 
 def callback() {
 
-	 log.trace "GCalSearch::callback"
+	log.trace "GCalSearch: callback()"
 
 	log.debug "atomicState.oauthInitState ${atomicState.oauthInitState}"
     log.debug "params.state ${params.state}"
@@ -262,13 +278,17 @@ def callback() {
             atomicState.last_use = now()
 			jsonMap = resp.data
 		}
+        log.trace "After Callback: atomicState.refreshToken = ${atomicState.refreshToken}"
+        log.debug "After Callback: atomicState.authToken = ${atomicState.authToken}"        
+        state.refreshToken = atomicState.refreshToken
+        
 	} catch (e) {
 		log.error "something went wrong: $e"
 		log.error e.getResponse().getData()
 		return
 	}
 
-	if (atomicState.authToken) {
+	if (atomicState.authToken && atomicState.refreshToken ) {
 		// call some method that will render the successfully connected message
 		success()
 	} else {
@@ -291,7 +311,10 @@ def success() {
             <p>Return to the SmartThings App and then </p>
             <p>Click 'Done' to finish setup of GCal Search.</p>
             <p> </p>
-            <p> ${calList} </p>
+            <p> authToken</p>
+            <p> ${atomicState.authToken} </p>
+            <p> refreshToken</p>            
+            <p> ${atomicState.refreshToken} </p>
     """
     displayMessageAsHtml(message)
 }
@@ -321,22 +344,33 @@ def displayMessageAsHtml(message) {
 }
 
 private refreshAuthToken() {
-    log.trace "GCalSearch::refreshAuthToken"
-    if(!atomicState.refreshToken) {
+    log.trace "GCalSearch: refreshAuthToken()"
+    if(!atomicState.refreshToken && !state.refreshToken) {    
         log.warn "Can not refresh OAuth token since there is no refreshToken stored"
         log.debug state
     } else {
-        def stcid = getAppClientId()
-
+    	def refTok 
+   	    if (atomicState.refreshToken) {
+        	refTok = atomicState.refreshToken
+    		log.debug "Existing atomicState.refreshToken = ${refTok}"
+        } else if ( state.refreshToken ) {        
+        	refTok = state.refreshToken
+    		log.debug "Existing state.refreshToken = ${refTok}"
+        }    
+        def stcid = getAppClientId()		
+        log.debug "ClientId = ${stcid}"
+        def stcs = getAppClientSecret()		
+        log.debug "ClientSecret = ${stcs}"
+        
         def refreshParams = [
             method: 'POST',
             uri   : "https://www.googleapis.com",
             path  : "/oauth2/v3/token",
             body : [
-                refresh_token: "${atomicState.refreshToken}", 
-                client_secret: getAppClientSecret(),
+                refresh_token: "${refTok}", 
+                client_secret: stcs,
                 grant_type: 'refresh_token', 
-                client_id: getAppClientId()
+                client_id: stcid
             ],
         ]
 
@@ -389,7 +423,7 @@ def childUninstalled() {
 
 def revokeAccess() {
 
-    log.trace "GCalSearch::revokeAccess"
+    log.trace "GCalSearch: revokeAccess()"
 
 	refreshAuthToken()
 	
@@ -404,7 +438,7 @@ def revokeAccess() {
 			log.debug "resp"
 			log.debug resp.data
     		revokeAccessToken()
-            atomicState.accessToken = atomicState.refreshToken = atomicState.authToken = null
+            atomicState.accessToken = atomicState.refreshToken = atomicState.authToken = state.refreshToken = null
 		}
 	} catch (e) {
 		log.debug "something went wrong: $e"

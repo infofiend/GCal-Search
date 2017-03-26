@@ -16,6 +16,7 @@
  *
  * Updates:
  *
+ * 20170322.1 - Changed screen format; made search string & calendar name the default Trigger name
  * 20170322.1 - added checkMsgWanted(); made tips on screen hideable & hidden 
  * 20170321.1 - Fixed OAuth issues; added notification times offset option 
  * 20170306.1 - Bug fixes; No search string now working; schedules fixed
@@ -35,7 +36,7 @@ definition(
     name: "GCal Search Trigger",
     namespace: "mnestor",
     author: "Mike Nestor and Anthony Pastor",
-    description: "Integrates SmartThings with Google Calendar to trigger events, presence, and/or send start or end notifications.",
+    description: "Creates & Controls virtual contact (event) or presence sensors.",
     category: "My Apps",
     parent: "mnestor:GCal Search",
     iconUrl: "https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal.png",
@@ -48,7 +49,7 @@ preferences {
 }
 
 private version() {
-	def text = "20170322.1"
+	def text = "20170326.1"
 }
 
 def selectCalendars() {
@@ -56,7 +57,15 @@ def selectCalendars() {
     
     def calendars = parent.getCalendarList()
     log.debug "Calendar list = ${calendars}"
-           
+    def defName = ""
+    if (search) {
+    	defName = search.replaceAll(" \" [^a-zA-Z0-9]+","")
+        if (eventOrPresence == "Contact") {
+	        defName = defName + " Events"
+        }
+        log.debug "defName = ${defName}"
+    }
+    
     //force a check to make sure the device handler is available for use
     try {
     	def device = getDevice()
@@ -69,16 +78,15 @@ def selectCalendars() {
     }
     
     return dynamicPage(name: "selectCalendars", title: "Create new calendar search", install: true, uninstall: childCreated()) {
-            section("Required Info") {
-                input name: "name", type: "text", title: "Assign a Name", required: true, multiple: false
-                
+            section("Required Info") {                               
                 //we can't do multiple calendars because the api doesn't support it and it could potentially cause a lot of traffic to happen
-                input name: "watchCalendars", title:"", type: "enum", required:true, multiple:false, description: "Which calendars do you want to search?", metadata:[values:calendars], submitOnChange: true
+                input name: "watchCalendars", title:"", type: "enum", required:true, multiple:false, description: "Which calendar do you want to search?", metadata:[values:calendars], submitOnChange: true
                 
-                input name: "eventOrPresence", title:"", type: "enum", required:true, multiple:false, description: "Do you want this gCal Search Trigger to control an Event or a Virtual Presence?", options:["Event", "Presence"]
+                input name: "eventOrPresence", title:"Type of Virtual Device to create?  Contact (for events) or Presence?", type: "enum", required:true, multiple:false, description: "Do you want this gCal Search Trigger to control a virtual Contact Sensor (for Events) or a virtual presence sensor?", options:["Contact", "Presence"], defaultValue: "Contact"
+               
             }
             section("Optional - Event Filter") {
-                input name: "search", type: "text", title: "Search String", required: false                                
+                input name: "search", type: "text", title: "Search String", required: false, submitOnChange: true                                
             }
             section("Event Filter Tips", hideable:true, hidden:true) {
                 paragraph "Leave search blank to match every event on the selected calendar(s)"
@@ -87,6 +95,9 @@ def selectCalendars() {
                 "match a given term, use the form -term\n\nExamples:\nHoliday (anything with Holiday)\n" +
                 "\"#Holiday\" (anything with #Holiday)\n#Holiday (anything with Holiday, ignores the #)"
 			}
+            section("Required - Trigger Name") {
+                input name: "name", type: "text", title: "Assign a Name", required: true, multiple: false, defaultValue: "${defName}"
+            }
 
             section("Optional - Receive Event Notifications using Ask Alexa") {
             	input name:"wantStartMsgs", type: "enum", title: "Send notification of event start?", required: true, multiple: false, options: ["Yes", "No"], defaultValue: "No", submitOnChange: true
@@ -138,7 +149,7 @@ def initialize() {
 
     def device = getDevice()
     
-    if (eventOrPresence == "Event") {
+    if (eventOrPresence == "Contact") {
 	    device.label = "${settings.name} Events"
 	} else if (eventOrPresence == "Presence") {        
 	    device.label = "${settings.name} Presence"    
@@ -149,12 +160,12 @@ def initialize() {
 }
 
 def getDevice() {
-log.trace "GCalSearchTrigger::getDevice()"
+	log.trace "GCalSearchTrigger: getDevice()"
 	def device
     if (!childCreated()) {
 	    def calName = state.calName
-    	if (eventOrPresence == "Event") {        	
-	        device = addChildDevice(getNamespace(), getEventDeviceHandler(), getDeviceID(), null, [label: "${settings.name} Events", calendar: watchCalendars, completedSetup: true])
+    	if (eventOrPresence == "Contact") {        	
+	        device = addChildDevice(getNamespace(), getEventDeviceHandler(), getDeviceID(), null, [label: "${settings.name}", calendar: watchCalendars, completedSetup: true])
             
     	} else if (eventOrPresence == "Presence") {
 			device = addChildDevice(getNamespace(), getPresenceDeviceHandler(), getDeviceID(), null, [label: "${settings.name}", calendar: watchCalendars, completedSetup: true])
@@ -168,7 +179,7 @@ log.trace "GCalSearchTrigger::getDevice()"
 }
 
 def getNextEvents() {
-    log.trace "GCalSearchTrigger::getNextEvents() child"
+    log.trace "GCalSearchTrigger: getNextEvents() child"
     def search = (!settings.search) ? "" : settings.search
     return parent.getNextEvents(settings.watchCalendars, search)
 }
