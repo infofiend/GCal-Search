@@ -42,21 +42,28 @@ private version() {
 }
 
 def mainPage() {
-   log.trace "mainPage(): appId = ${app.id}, apiServerUrl = ${ getApiServerUrl() }"
-   
-   if (!atomicState.accessToken) {
-        log.debug "No access token found - calling createAccessToken()"
+  	log.trace "mainPage(): appId = ${app.id}, apiServerUrl = ${ getApiServerUrl() }"
+	log.info "state.refreshToken = ${state.refreshToken}"
+
+   	if (!atomicState.accessToken && !state.refreshToken && !atomicState.refreshToken) {
+        log.debug "No access or refresh tokens found - calling createAccessToken()"
         atomicState.authToken = null
         atomicState.accessToken = createAccessToken()
     } else {
 	    log.debug "Access token ${atomicState.accessToken} found - saving list of calendars."
-    	state.myCals = getCalendarList()
-        if (!atomicState.refreshToken) {
+        if (!atomicState.refreshToken && !state.refreshToken) {
         	log.debug "BUT...No refresh token found."
-        } else {
-        	log.debug "Refresh token ${atomicState.refreshToken} found"
-		}            
+        } else {        	
+            if (state.refreshToken) {
+        		log.debug "state.refreshToken ${atomicState.refreshToken} found"
+        	} else if (atomicState.refreshToken) {
+        		log.debug "atomicState.refreshToken ${atomicState.refreshToken} found"
+	        }             
+    	
+			state.myCals = getCalendarList()
+        }
     }
+    
     
     return dynamicPage(name: "authentication", uninstall: false) {
         if (!atomicState.authToken) {
@@ -115,6 +122,7 @@ def initialize() {
     }
 //	log.info "clientId = ${clientId}"
 //  log.info "clientSecret = ${clientSecret}"
+	log.info "initialize: state.refreshToken = ${state.refreshToken}"
     
     state.setup = true
 
@@ -128,8 +136,8 @@ def initialize() {
 
 
 def getCalendarList() {
-    log.trace "getCalendarList() - calling refreshAuthToken()"
-    refreshAuthToken()
+    log.trace "getCalendarList()"
+    isTokenExpired("getCalendarList")    
     
     def path = "/calendar/v3/users/me/calendarList"
     def calendarListParams = [
@@ -178,8 +186,8 @@ def getCalendarList() {
 }
 
 def getNextEvents(watchCalendars, search) {
-    log.trace "getting event list"
-    refreshAuthToken()
+    log.trace "getNextEvents()"
+    isTokenExpired("getNextEvents")    
     
     def pathParams = [
         maxResults: 1,
@@ -273,15 +281,18 @@ def callback() {
 		httpPost(postParams) { resp ->
 			log.debug "resp callback"
 			log.debug resp.data
-			atomicState.refreshToken = resp.data.refresh_token
+			if (!atomicState.refreshToken && resp.data.refresh_token) {
+            	atomicState.refreshToken = resp.data.refresh_token
+            }
             atomicState.authToken = resp.data.access_token
             atomicState.last_use = now()
 			jsonMap = resp.data
 		}
         log.trace "After Callback: atomicState.refreshToken = ${atomicState.refreshToken}"
         log.debug "After Callback: atomicState.authToken = ${atomicState.authToken}"        
-        state.refreshToken = atomicState.refreshToken
-        
+        if (!state.refreshToken && atomicState.refreshToken) {
+	        state.refreshToken = atomicState.refreshToken
+    	}    
 	} catch (e) {
 		log.error "something went wrong: $e"
 		log.error e.getResponse().getData()
@@ -297,18 +308,23 @@ def callback() {
 	}
 }
 
-def isTokenExpired() {
-    if (atomicState.last_use == null || now() - atomicState.last_use > 3600) {
-    	return refreshAuthToken()
-    }
-    return false
+def isTokenExpired(whatcalled) {
+    log.trace "isTokenExpired() called by ${whatcalled}"
+    
+    if (atomicState.last_use == null || now() - atomicState.last_use > 3000) {
+    	log.debug "authToken null or old (>3000) - calling refreshAuthToken()"
+        return refreshAuthToken()
+    } else {
+	    log.debug "authToken good"
+	    return false
+    }    
 }
 
 def success() {
-//	atomicState.accessToken = createAccessToken()
+
     def message = """
-    		<p>Your account is now connected to SmartThings!</p>
-            <p>Return to the SmartThings App and then </p>
+    		<p>Your account is now connected to GCal Search!</p>
+            <p>Now return to the SmartThings App and then </p>
             <p>Click 'Done' to finish setup of GCal Search.</p>
             <p> </p>
             <p> authToken</p>
@@ -350,12 +366,12 @@ private refreshAuthToken() {
         log.debug state
     } else {
     	def refTok 
-   	    if (atomicState.refreshToken) {
-        	refTok = atomicState.refreshToken
-    		log.debug "Existing atomicState.refreshToken = ${refTok}"
-        } else if ( state.refreshToken ) {        
+   	    if (state.refreshToken) {
         	refTok = state.refreshToken
     		log.debug "Existing state.refreshToken = ${refTok}"
+        } else if ( atomicState.refreshToken ) {        
+        	refTok = atomicState.refreshToken
+    		log.debug "Existing atomicState.refreshToken = ${refTok}"
         }    
         def stcid = getAppClientId()		
         log.debug "ClientId = ${stcid}"
