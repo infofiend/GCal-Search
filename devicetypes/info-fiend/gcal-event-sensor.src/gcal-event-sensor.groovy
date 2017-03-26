@@ -12,8 +12,10 @@
  *
  * Updates:
  *
+ * 20170326.1 - bug fixes
+ *
  * 20170322.1 - startMsgTime, startMsg, endMsgTime, and endMsg are now attributes that can be used in CoRE
- 			  - cleaned up variables and code.
+ *			  - cleaned up variables and code.
  *
  * 20170321.1 - Added notification offset times.
  *
@@ -53,12 +55,12 @@ metadata {
         attribute "calName", "string"
         attribute "name", "string"
         attribute "eventSummary", "string"
-        attribute "openTime", "number"
-        attribute "closeTime", "number"				        
-        attribute "startMsgTime", "number"
-        attribute "startMsg", "string"
+        attribute "openTime", "date"
+        attribute "closeTime", "date"				        
+        attribute "startMsgTime", "string"
+        attribute "startMsg", "date"
         attribute "endMsg", "string"
-        attribute "endMsgTime", "number"
+        attribute "endMsgTime", "date"
 	}
 
 	simulator {
@@ -160,13 +162,13 @@ def open() {
 
 	//Schedule Close & endMsg
     try {
-		def rawCloseTime = device.currentValue("closeTime")
-		def closeTime = new Date( rawCloseTime )
-	    def rawEndMsgTime = device.currentValue("endMsgTime")
-    	def endMsgTime = new Date( rawEndMsgTime )    
-	    log.debug "Device's rawCloseTime = ${rawEndMsgTime} & closeTime = ${endMsgTime}"
-        log.debug "Device's rawEndMsgTime = ${rawEndMsgTime} & endMsgTime = ${endMsgTime}"
-        
+		def closeTime = device.currentValue("closeTime")
+	//	Date closeTime = toDateTime(rawCloseTime)
+	    def endMsgTime = device.currentValue("endMsgTime")
+   // 	Date endMsgTime = toDateTime(rawEndMsgTime)    
+	//    log.debug "Device's rawCloseTime = ${rawCloseTime} & closeTime = ${closeTime}"
+    //    log.debug "Device's rawEndMsgTime = ${rawEndMsgTime} & endMsgTime = ${endMsgTime}"
+        log.debug "closeTime = ${closeTime} & endMsgTime = ${endMsgTime}"
 	    def endMsg = device.currentValue("endMsg") ?: "No End Message"
         log.debug "Device's endMsg = ${endMsg}"
         
@@ -203,18 +205,18 @@ void poll() {
         // EVENT FOUND **********
     	if (items && items.items && items.items.size() > 0) {        
 
+        	log.debug "GCalEventSensor: We Haz Eventz!"
+            
+			//	Only process the next scheduled event             
+            def event = items.items[0]
+        	def title = event.summary                       
+            
 			// Get Calendar Name 
 			def calName = "Primary Calendar"
 	        if ( event?.organizer?.displayName ) {
     	       	calName = event.organizer.displayName
         	}
-	        sendEvent("name":"calName", "value":calName, displayed: false)  
-            
-			//	Only process the next scheduled event 
-    	    def event = items.items[0]
-        	def title = event.summary                       
-            
-        	log.debug "GCalEventSensor: We Haz Eventz! ${event}"
+	        sendEvent("name":"calName", "value":calName, displayed: false)             	           
 
 			// Get event start and end times
 	        def startTime
@@ -235,7 +237,9 @@ void poll() {
                 startTime = sdf.parse(event.start.dateTime)
         	    endTime = sdf.parse(event.end.dateTime)
             }   			
-
+			def eventStartTime = startTime
+            def eventEndTime = endTime
+            
 			// Build Notification Times & Messages
             def startMsgWanted = parent.checkMsgWanted("startMsg")
 			def startMsgTime = startTime
@@ -256,26 +260,28 @@ void poll() {
 		            log.debug "endOffset: ${endOffset} / endMsgTime = ${endMsgTime}}"                        
                 }               
 			}
+            def eventStartMsgTime = startMsgTime
+            def eventEndMsgTime = endMsgTime
             
 			// Build Event Summary
 	        def eventSummary = "Event: ${title}\n\n"
 			eventSummary += "Calendar: ${calName}\n\n"   
-    	    def startTimeHuman = startTime.format("EEE, hh:mm a", location.timeZone)
+    	    def startTimeHuman = startTime.format("EEE, MMM dd hh:mm a", location.timeZone)
         	eventSummary += "Begins: ${startTimeHuman}\n"
 	        
             def startMsg = "No Start Msg Wanted"
             if (startMsgWanted) {
-	            def startMsgTimeHuman = startTime.format("EEE, hh:mm a", location.timeZone)            
+	            def startMsgTimeHuman = startMsgTime.format("EEE, MMM dd hh:mm a", location.timeZone)            
                 startMsg = "${type}vent ${title} occurs at " + startMsgTimeHuman                
 				eventSummary += "Notfication of ${startMsg}.\n\n"
 	        }
             
-	        def endTimeHuman = endTime.format("EEE, hh:mm a", location.timeZone)
-    	    eventSummary += "Ends: ${endTimeHuman}\n\n"
+	        def endTimeHuman = endTime.format("EEE, MMM dd hh:mm a", location.timeZone)
+    	    eventSummary += "Ends: ${endTimeHuman}\n"
 
             def endMsg = "No End Msg Wanted"
 			if (endMsgWanted) {
-		        def endMsgTimeHuman = endTime.format("EEE, hh:mm a", location.timeZone)            
+		        def endMsgTimeHuman = endMsgTime.format("EEE, MMM dd hh:mm a", location.timeZone)            
 	            endMsg = "${type}vent ${title} ends at " + endMsgTimeHuman                
 				eventSummary += "Notfication of ${endMsg}.\n\n"
         	}
@@ -288,13 +294,13 @@ void poll() {
 			
             //Set the closeTime, endMsgTime, and endMsg before opening an event in progress
 	        //  --for use in the open() call for scheduling close and end event notification
-            sendEvent("name":"closeTime", "value":endTime, displayed: false)           
-			sendEvent("name":"endMsgTime", "value":endMsgTime, displayed: false)
+            sendEvent("name":"closeTime", "value":eventEndTime, displayed: false)           
+			sendEvent("name":"endMsgTime", "value":eventEndMsgTime, displayed: false)
             sendEvent("name":"endMsg", "value":"${endMsg}", displayed: false)                        
 
 			//Set the openTime, startMsgTime, and startMsg 
-			sendEvent("name":"openTime", "value":startTime, displayed: false)
-			sendEvent("name":"startMsgTime", "value":startMsgTime, displayed: false)            
+			sendEvent("name":"openTime", "value":eventStartTime, displayed: false)
+			sendEvent("name":"startMsgTime", "value":eventStartMsgTime, displayed: false)            
 			sendEvent("name":"startMsg", "value":"${startMsg}", displayed: false)
             
       		// ALREADY IN EVENT?	        	                   
