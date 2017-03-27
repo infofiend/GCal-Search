@@ -266,7 +266,7 @@ void poll() {
 	        
             def startMsg = "No Start Msg Wanted"
             if (startMsgWanted) {
-	            def startMsgTimeHuman = startMsgTime.format("EEE, MMM dd hh:mm a", location.timeZone)            
+	            def startMsgTimeHuman = startTime.format("EEE, MMM dd hh:mm a", location.timeZone)            
                 startMsg = "${type}vent ${title} occurs at " + startMsgTimeHuman                
 				eventSummary += "Notfication of ${startMsg}.\n\n"
 	        }
@@ -276,7 +276,7 @@ void poll() {
 
             def endMsg = "No End Msg Wanted"
 			if (endMsgWanted) {
-		        def endMsgTimeHuman = endMsgTime.format("EEE, MMM dd hh:mm a", location.timeZone)            
+		        def endMsgTimeHuman = endTime.format("EEE, MMM dd hh:mm a", location.timeZone)            
 	            endMsg = "${type}vent ${title} ends at " + endMsgTimeHuman                
 				eventSummary += "Notfication of ${endMsg}.\n\n"
         	}
