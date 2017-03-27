@@ -16,6 +16,7 @@
  *
  * Updates:
  *
+ * 20170327.2 - Added options to receive start and end event notifications via SMS or Push
  * 20170327.1 - Changed screen format; made search string & calendar name the default Trigger name
  * 20170322.1 - added checkMsgWanted(); made tips on screen hideable & hidden 
  * 20170321.1 - Fixed OAuth issues; added notification times offset option 
@@ -49,7 +50,7 @@ preferences {
 }
 
 private version() {
-	def text = "20170326.1"
+	def text = "20170326.2"
 }
 
 def selectCalendars() {
@@ -99,7 +100,7 @@ def selectCalendars() {
                 input name: "name", type: "text", title: "Assign a Name", required: true, multiple: false, defaultValue: "${defName}"
             }
 
-            section("Optional - Receive Event Notifications using Ask Alexa") {
+            section("Optional - Receive Event Notifications?") {
             	input name:"wantStartMsgs", type: "enum", title: "Send notification of event start?", required: true, multiple: false, options: ["Yes", "No"], defaultValue: "No", submitOnChange: true
 				if (wantStartMsgs == "Yes") {                	
 	                input name:"startOffset", type:"number", title:"Number of Minutes to Offset From Start of Calendar Event", required: false , range:"*..*"
@@ -110,7 +111,7 @@ def selectCalendars() {
 	                input name:"endOffset", type:"number", title:"Number of Minutes to Offset From End of Calendar Event", required: false , range:"*..*"
 				}
             }
-            section("Notification Time Tips", hideable:true, hidden:true) {            
+            section("Event Notification Time Tips", hideable:true, hidden:true) {            
             	paragraph "If you want the notification to occur BEFORE the start/end of the event, " + 
                   		  "then use a negative number for offset time.  For example, to receive a " +
                           "notification 5 minutes beforehand, use an an offset of -5. \n\n" +
@@ -120,12 +121,23 @@ def selectCalendars() {
                           "helpful for all-day events, which start at midnight)." 
                  	      "of the calendar event, enter number of minutes to offset here."
             }
+
+			if (wantStartMsgs == "Yes" || wantEndMsgs == "Yes") {
+	            section( "Optional - Receive Event Notifications using Ask Alexa" ) {
+					input "sendAANotification", "enum", title: "Send Event Notifications to Ask Alexa Message Queue?", options: ["Yes", "No"], defaultValue: "No", required: false
+        		}
             
-            if (childCreated()){
-            	section ("Tap the button below to remove this trigger and corresponding switch"){}
-            }
+				section( "Optional - Receive Event Notifications using SMS / Push" ) {
+		        	input("recipients", "contact", title: "Send notifications to", required: false) 
+	        	    input "sendPushMessage", "enum", title: "Send a push notification?", options: ["Yes", "No"], required: false
+    	        	input "phone", "phone", title: "Send a Text Message?", required: false
+        		}
+            
+            	if (childCreated()){
+	            	section ("Tap the button below to remove this trigger and corresponding switch"){}
+    	        }
+        	}
         }
-        
 
 }
 
@@ -213,7 +225,26 @@ private startMsg() {
     	def myApp = settings.name
     	def msgText = state.startMsg ?: "Error finding start message"
         
-		sendLocationEvent(name: "AskAlexaMsgQueue", value: myApp, isStateChange: true, descriptionText: msgText, unit: myApp)  
+		if (sendAANotification == "Yes") {
+	        log.debug( "Sending start event to AskAlexaMsgQueue." )        
+        	sendLocationEvent(name: "AskAlexaMsgQueue", value: myApp, isStateChange: true, descriptionText: msgText, unit: myApp)  
+        }    
+
+        if ( recipients ) {
+        	log.debug( "Sending start event to selected contacts." )
+	        sendSms( recipients, msgText )
+    	}
+
+        if ( sendPushMessage != "No" ) {
+        	log.debug( "Sending start event push message." )
+	        sendPush( msgText )
+    	}
+
+	    if ( phone ) {
+    	    log.debug( "Sending start event text message." )
+        	sendSms( phone, msgText )
+	    }
+        
 	} else {
     	log.trace "No Start Msgs"
 	}    
@@ -225,9 +256,27 @@ private endMsg() {
     	def myApp = settings.name
     	def msgText = state.endMsg ?: "Error finding end message"
         
-		sendLocationEvent(name: "AskAlexaMsgQueue", value: myApp, isStateChange: true, descriptionText: msgText, unit: myApp)  
-	} else {
-    	log.trace "No End Msgs"
+		if (sendAANotification == "Yes") {
+	        log.debug( "Sending end event to AskAlexaMsgQueue." )
+        	sendLocationEvent(name: "AskAlexaMsgQueue", value: myApp, isStateChange: true, descriptionText: msgText, unit: myApp)  
+        }    
+        
+        if ( recipients ) {
+        	log.debug( "Sending end event to selected contacts." )
+	        sendSms( recipients, msgText )
+    	}
+
+        if ( sendPushMessage != "No" ) {
+        	log.debug( "Sending end event push message." )
+	        sendPush( msgText )
+    	}
+
+	    if ( phone ) {
+    	    log.debug( "Sending end event text message." )
+        	sendSms( phone, msgText )
+	    }
+    } else {    	
+        log.trace "No End Msgs"
 	}    
 }
 
