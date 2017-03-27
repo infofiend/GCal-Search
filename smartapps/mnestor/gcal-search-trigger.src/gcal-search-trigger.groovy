@@ -16,7 +16,7 @@
  *
  * Updates:
  *
- * 20170322.1 - Changed screen format; made search string & calendar name the default Trigger name
+ * 20170327.1 - Changed screen format; made search string & calendar name the default Trigger name
  * 20170322.1 - added checkMsgWanted(); made tips on screen hideable & hidden 
  * 20170321.1 - Fixed OAuth issues; added notification times offset option 
  * 20170306.1 - Bug fixes; No search string now working; schedules fixed
