@@ -129,7 +129,7 @@ def selectCalendars() {
             
 				section( "Optional - Receive Event Notifications using SMS / Push" ) {
 		        	input("recipients", "contact", title: "Send notifications to", required: false) 
-	        	    input "sendPushMessage", "enum", title: "Send a push notification?", options: ["Yes", "No"], required: false
+	        	    input "sendPushMessage", "enum", title: "Send a push notification?", options: ["Yes", "No"], defaultValue: "No", required: false
     	        	input "phone", "phone", title: "Send a Text Message?", required: false
         		}
             
@@ -235,7 +235,7 @@ private startMsg() {
 	        sendSms( recipients, msgText )
     	}
 
-        if ( sendPushMessage != "No" ) {
+        if ( sendPushMessage == "Yes" ) {
         	log.debug( "Sending start event push message." )
 	        sendPush( msgText )
     	}
@@ -266,7 +266,7 @@ private endMsg() {
 	        sendSms( recipients, msgText )
     	}
 
-        if ( sendPushMessage != "No" ) {
+        if ( sendPushMessage == "Yes" ) {
         	log.debug( "Sending end event push message." )
 	        sendPush( msgText )
     	}
