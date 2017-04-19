@@ -16,6 +16,7 @@
  *
  * Updates:
  *
+ * 20170419.1 - Added on/off for offsetNotify DTH attribute
  * 20170327.2 - Added options to receive start and end event notifications via SMS or Push
  * 20170327.1 - Changed screen format; made search string & calendar name the default Trigger name
  * 20170322.1 - added checkMsgWanted(); made tips on screen hideable & hidden 
@@ -50,7 +51,7 @@ preferences {
 }
 
 private version() {
-	def text = "20170326.2"
+	def text = "20170419.1"
 }
 
 def selectCalendars() {
@@ -128,7 +129,7 @@ def selectCalendars() {
         		}
             
 				section( "Optional - Receive Event Notifications using SMS / Push" ) {
-		        	input("recipients", "contact", title: "Send notifications to", required: false) 
+		  //      	input("recipients", "contact", title: "Send notifications to", required: false) 
 	        	    input "sendPushMessage", "enum", title: "Send a push notification?", options: ["Yes", "No"], defaultValue: "No", required: false
     	        	input "phone", "phone", title: "Send a Text Message?", required: false
         		}
@@ -177,7 +178,7 @@ def getDevice() {
     if (!childCreated()) {
 	    def calName = state.calName
     	if (eventOrPresence == "Contact") {        	
-	        device = addChildDevice(getNamespace(), getEventDeviceHandler(), getDeviceID(), null, [label: "${settings.name}", calendar: watchCalendars, completedSetup: true])
+	        device = addChildDevice(getNamespace(), getEventDeviceHandler(), getDeviceID(), null, [label: "${settings.name}", calendar: watchCalendars, offsetNotify: "off", completedSetup: true])
             
     	} else if (eventOrPresence == "Presence") {
 			device = addChildDevice(getNamespace(), getPresenceDeviceHandler(), getDeviceID(), null, [label: "${settings.name}", calendar: watchCalendars, completedSetup: true])
@@ -230,10 +231,10 @@ private startMsg() {
         	sendLocationEvent(name: "AskAlexaMsgQueue", value: myApp, isStateChange: true, descriptionText: msgText, unit: myApp)  
         }    
 
-        if ( recipients ) {
-        	log.debug( "Sending start event to selected contacts." )
-	        sendSms( recipients, msgText )
-    	}
+ //       if ( recipients ) {
+   //     	log.debug( "Sending start event to selected contacts." )
+	 //       sendSms( recipients, msgText )
+   // 	}
 
         if ( sendPushMessage == "Yes" ) {
         	log.debug( "Sending start event push message." )
@@ -244,6 +245,8 @@ private startMsg() {
     	    log.debug( "Sending start event text message." )
         	sendSms( phone, msgText )
 	    }
+        
+       	getDevice().offsetOn()       
         
 	} else {
     	log.trace "No Start Msgs"
@@ -275,6 +278,9 @@ private endMsg() {
     	    log.debug( "Sending end event text message." )
         	sendSms( phone, msgText )
 	    }
+        
+        getDevice().offsetOff() 
+        
     } else {    	
         log.trace "No End Msgs"
 	}    
@@ -345,7 +351,7 @@ def open() {
 
 def close() {
 	log.trace "${settings.name}.close():"
-	getDevice().close()
+	getDevice().close()   	
 
 }
 
