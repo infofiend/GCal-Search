@@ -129,7 +129,8 @@ metadata {
         }
         
 		main "status"
-		details(["status", "refresh", "summary"])	//"closeBtn", "openBtn",  , "startMsgTime", "startMsg", "endMsgTime", "endMsg", , "offsetNotify"
+		details(["status", "refresh", "summary"])	
+        			//"closeBtn", "openBtn",  , "startMsgTime", "startMsg", "endMsgTime", "endMsg", , "offsetNotify"
 	}
 }
 
