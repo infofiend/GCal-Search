@@ -12,6 +12,8 @@
  *
  * Updates:
  *
+ * 20170419.1 - cleaned up tiles; added offsetNotify attribute - for additional CoRE flexibility - which turns on if startMsg / turns off at either endMsg event time or endTime (whichever occurs 1st).
+ *
  * 20170327.1 - restructured scheduling; bug fixes
  *
  * 20170326.1 - bug fixes
@@ -52,6 +54,8 @@ metadata {
 
 		command "open"
 		command "close"
+        command "offsetOn"
+        command "offsetOff"
         
         attribute "calendar", "json_object"
         attribute "calName", "string"
@@ -63,6 +67,7 @@ metadata {
         attribute "endMsgTime", "number"
         attribute "startMsg", "string"
         attribute "endMsg", "string"
+        attribute "offsetNotify", "string"
 	}
 
 	simulator {
@@ -72,8 +77,8 @@ metadata {
 
 	tiles (scale: 2) {
 		standardTile("status", "device.contact", width: 2, height: 2) {
-			state("closed", label:'', icon:"https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal-Off@2x.png", backgroundColor:"#79b821")
-			state("open", label:'', icon:"https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal-On@2x.png", backgroundColor:"#ffa81e")
+			state("closed", label:'', icon:"https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal-Off@2x.png", backgroundColor:"#ffffff")
+			state("open", label:'', icon:"https://raw.githubusercontent.com/mnestor/GCal-Search/icons/icons/GCal-On@2x.png", backgroundColor:"#79b821")
 		}
 
         //Open & Close Button Tiles	(not used)
@@ -90,7 +95,7 @@ metadata {
         }
 
         //Event Summary
-        valueTile("summary", "device.eventSummary", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+        valueTile("summary", "device.eventSummary", inactiveLabel: false, decoration: "flat", width: 6, height: 3) {
             state "default", label:'${currentValue}'
         }
         
@@ -118,15 +123,20 @@ metadata {
         valueTile("endMsgTime", "device.endMsgTime", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
             state "default", label:'endMsgTime:\n ${currentValue}'
         }
+        valueTile("offsetNotify", "device.offsetNotify", inactiveLabel: false, decoration: "flat", width: 3, height: 2) {
+            state "off", label:'offsetNot: ${currentValue}', backgroundColor:"#ffffff"
+            state "on", label:'offsetNot: ${currentValue}', backgroundColor:"#79b821"
+        }
         
 		main "status"
-		details(["status", "refresh", "summary", "startMsgTime", "startMsg", "endMsgTime", "endMsg"])	//"closeBtn", "openBtn",  
+		details(["status", "refresh", "summary"])	//"closeBtn", "openBtn",  , "startMsgTime", "startMsg", "endMsgTime", "endMsg", , "offsetNotify"
 	}
 }
 
 def installed() {
     log.trace "GCalEventSensor: installed()"
     sendEvent(name: "switch", value: "off")
+    sendEvent(name: "offsetNotify", value: "off")
     sendEvent(name: "contact", value: "closed", isStateChange: true)
     
     initialize()
@@ -186,7 +196,22 @@ def close() {
 	log.trace "GCalEventSensor: close()"
     
     sendEvent(name: "switch", value: "off")
+    sendEvent(name: "offsetNotify", value: "off")
     sendEvent(name: "contact", value: "closed", isStateChange: true)           
+    
+}
+
+def offsetOn() {
+	log.trace "GCalEventSensor: offsetOn()"
+    
+    sendEvent(name: "offsetNotify", value: "on", isStateChange: true)           
+    
+}
+
+def offsetOff() {
+	log.trace "GCalEventSensor: offsetOff()"
+    
+    sendEvent(name: "offsetNotify", value: "off", isStateChange: true)           
     
 }
 
@@ -262,23 +287,27 @@ void poll() {
 	        def eventSummary = "Event: ${title}\n\n"
 			eventSummary += "Calendar: ${calName}\n\n"   
     	    def startTimeHuman = startTime.format("EEE, MMM dd hh:mm a", location.timeZone)
-        	eventSummary += "Begins: ${startTimeHuman}\n"
+        	eventSummary += "Event Start: ${startTimeHuman}\n"
 	        
             def startMsg = "No Start Msg Wanted"
             if (startMsgWanted) {
-	            def startMsgTimeHuman = startTime.format("EEE, MMM dd hh:mm a", location.timeZone)            
-                startMsg = "${type}vent ${title} occurs at " + startMsgTimeHuman                
-				eventSummary += "Notfication of ${startMsg}.\n\n"
+            	def sPart = "s"
+            	if (startOffset > 0) { sPart = "ed" }            
+	            def startMsgTimeHuman = startMsgTime.format("hh:mm a", location.timeZone)            
+                startMsg = "${type}vent ${title} occur" + "${sPart} at " + startTimeHuman                 
+				eventSummary += "Start Notfication at ${startMsgTimeHuman}.\n\n"
 	        }
             
 	        def endTimeHuman = endTime.format("EEE, MMM dd hh:mm a", location.timeZone)
-    	    eventSummary += "Ends: ${endTimeHuman}\n"
+    	    eventSummary += "Event End: ${endTimeHuman}\n"
 
             def endMsg = "No End Msg Wanted"
 			if (endMsgWanted) {
-		        def endMsgTimeHuman = endTime.format("EEE, MMM dd hh:mm a", location.timeZone)            
-	            endMsg = "${type}vent ${title} ends at " + endMsgTimeHuman                
-				eventSummary += "Notfication of ${endMsg}.\n\n"
+            	def ePart = "s"
+            	if (endOffset > 0) { ePart = "ed" }
+		        def endMsgTimeHuman = endMsgTime.format("hh:mm a", location.timeZone)            
+	            endMsg = "${type}vent ${title} occur" + "${ePart} at " + endTimeHuman                
+				eventSummary += "End Notfication at ${endMsgTimeHuman}.\n\n"
         	}
             
 //            if (event.description) {
@@ -317,7 +346,8 @@ void poll() {
 	                log.debug "Already past ${type}vent ${title}."
 		        	if (isOpen) {                     
         	    		log.debug "Contact incorrectly open, so close."                    
-            	        close()  
+            	        close()
+                        offsetOff()
 						
                         // Unschedule All
 						parent.unscheduleEvent("open")                    
@@ -332,7 +362,8 @@ void poll() {
             	log.debug "${type}vent ${title} still in future."
 	        	if (isOpen) { 				
                     log.debug "Contact incorrectly open, so close."
-                    close()                     
+                    close()
+                    offsetOff()
 				}                 
 	            
                 // Schedule Open & start event messaging
@@ -360,7 +391,8 @@ void poll() {
             
 	    	if (isOpen) {             	
                 log.debug "Contact incorrectly open, so close."
-                close()                 
+                close()
+                offsetOff()
     	    } else {
             	// Unschedule All
 				parent.unscheduleEvent("open")                    
@@ -388,5 +420,5 @@ private Date msgTimeOffset(int minutes, Date originalTime){
 }
 
 def version() {
-	def text = "20170327.1"
+	def text = "20170419.1"
 }
