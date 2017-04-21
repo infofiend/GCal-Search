@@ -1,4 +1,4 @@
-*RE-RELEASE of mnestor's GCal-Search*
+*GCal-Search*
 
 *Now with choice of virtual contact or virtual presence devices*
 
@@ -10,25 +10,21 @@ Steps to set this up...
         b) Enable the Calendar API - https://console.developers.google.com/apis/library
         c) Setup new credentials - https://console.developers.google.com/apis/credentials
 
-        d) Enable OAuth with a redirect URI - IMPORTANT!  Your redirect URI will depend on the shard on which your ST system is on. For example,
- 
-            - If you are on shard 1 (you access the IDE using https://graph.api.smartthings.com):
-                THEN use https://graph.api.smartthings.com/oauth/callback
+        d) Enable OAuth with the following redirect URI:
                 
-            - If you are on shard 2 (you access the IDE using https://graph-na02-useast1.api.smartthings.com):
-                THEN use https://graph-na02-useast1.api.smartthings.com/oauth/callback                
-                
+                https://graph.api.smartthings.com/oauth/callback 
+                               
         e) Copy the Client ID and Client Secret from the Google credentials you just made.  Paste them in a text editor, as you will need these later
         
 2) Install the 2 SmartApps "GCal Search" and "GCal Search Trigger" via your IDE
-        https://graph.api.smartthings.com/ide/app/create
+        (go to https://graph.api.smartthings.com/ide/app/create)
         
-        a) Enable OAuth for "GCal Search"
+        a) Once you have installed the "GCal Search" smartapp, enable OAuth 
         b) Put the ClientID and Client Secret you copied from Step 1 into the Settings for "GCal Search"
         c) Publish the GCal Search (You DO NOT need to publish the GCal Search Trigger app)
         
 3) Install and Publish the 2 DTHs: "GCal Event Sensor" and "GCal Presence Sensor"
-        https://graph.api.smartthings.com/ide/device/create
+        (go to https://graph.api.smartthings.com/ide/device/create)
 
 4) Open the ST app on your phone and install the "GCal Search" app. 
         -This will walk you through connecting to Google and selecting a calendar and search terms.
