@@ -12,6 +12,7 @@
  *
  * Updates:
  *
+ * 20170422.1 - added Health Check 
  * 20170306.1 - Scheduling updated
  * 				Fixed Event Trigger with no search string.
  *				Added AskAlexa Message Queue compatibility
@@ -30,6 +31,7 @@ metadata {
 		capability "Refresh"
         capability "Switch"
         capability "Actuator"
+        capability "Health Check"
 
 		command "arrived"
 		command "departed"
@@ -43,6 +45,7 @@ metadata {
         attribute "departTime", "number"
         attribute "startMsg", "string"
         attribute "endMsg", "string"  
+        attribute "deleteInfo", "string"  
 	}
 
 	simulator {
@@ -69,13 +72,18 @@ metadata {
             state "default", action:"refresh.refresh", icon:"st.secondary.refresh"
         }
                 
-        valueTile("summary", "device.eventSummary", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+        valueTile("summary", "device.eventSummary", inactiveLabel: false, decoration: "flat", width: 6, height: 3) {
             state "default", label:'${currentValue}'
         }
+		
+        valueTile("deleteInfo", "device.deleteInfo", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'To remove this device from ST - delete the corresponding GCal Search Trigger.'
+        }
+
 
 		main("presence")
 		details([
-			"presence", "refresh", "summary"	//"notPresentBtn", "presentBtn",
+			"summary", "presence", "refresh", "deleteInfo" 	//"notPresentBtn", "presentBtn",
 		]) 
 	}
 
@@ -84,6 +92,9 @@ metadata {
 }
 
 def installed() {
+    log.trace "GCalPresenceSensor: installed()"
+    sendEvent(name: "DeviceWatch-Enroll", value: "{\"protocol\": \"LAN\", \"scheme\":\"untracked\", \"hubHardwareId\": \"${device.hub.hardwareID}\"}")
+    
     sendEvent(name: "switch", value: "off")
     sendEvent(name: "presence", value: "not present", isStateChange: true)
 
@@ -91,12 +102,13 @@ def installed() {
 }
 
 def updated() {
+    log.trace "GCalPresenceSensor: updated()"
 	initialize()
 }
 
 def initialize() {
-	
-	
+	log.trace "GCalPresenceSensor: initialize()"
+    refresh()
 }
 
 def parse(String description) {
@@ -264,5 +276,5 @@ def poll() {
 }
 
 def version() {
-	def text = "20170306.1"
+	def text = "20170422.1"
 }

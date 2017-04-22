@@ -12,23 +12,17 @@
  *
  * Updates:
  *
+ * 20170422.1 - added device Health capability
  * 20170419.1 - cleaned up tiles; added offsetNotify attribute - for additional CoRE flexibility - which turns on if startMsg / turns off at either endMsg event time or endTime (whichever occurs 1st).
- *
  * 20170327.1 - restructured scheduling; bug fixes
- *
  * 20170326.1 - bug fixes
- *
  * 20170322.1 - startMsgTime, startMsg, endMsgTime, and endMsg are now attributes that CoRE should be able to use
  *			  - cleaned up variables and code.
- *
  * 20170321.1 - Added notification offset times.
- *
  * 20170306.1 - Scheduling updated. 
  * 				Fixed Event Trigger with no search string.
  *				Added AskAlexa Message Queue compatibility
- *               
  * 20170302.1 - Re-release version 
- *
  * 20160411.1 - Change schedule to happen in the child app instead of the device
  * 20160332.2 - Updated date parsing for non-fullday events
  * 20160331.1 - Fix for all day event attempt #2
@@ -41,7 +35,11 @@
  *
  *
  */
- 
+
+preferences {
+    input("primaryName", "test", title: "Name of your GCal primary calendar", description: "Google doesn't provide this info, so if you don't add it here, the device will list it as \"Primary Google Calendar\".")
+} 
+
 metadata {
 	// Automatically generated. Make future change here.
 	definition (name: "GCal Event Sensor", namespace: "info_fiend", author: "anthony pastor") {
@@ -51,6 +49,7 @@ metadata {
 		capability "Refresh"
         capability "Switch"
         capability "Actuator"
+		capability "Health Check"
 
 		command "open"
 		command "close"
@@ -68,6 +67,7 @@ metadata {
         attribute "startMsg", "string"
         attribute "endMsg", "string"
         attribute "offsetNotify", "string"
+        attribute "deleteInfo", "string"
 	}
 
 	simulator {
@@ -110,7 +110,7 @@ metadata {
             state "default", label:'${currentValue}'
         }
         
-        //Messaging (not used)
+        //Not used
         valueTile("startMsg", "device.startMsg", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
             state "default", label:'startMsg:\n ${currentValue}'
         }
@@ -127,15 +127,20 @@ metadata {
             state "off", label:'offsetNot: ${currentValue}', backgroundColor:"#ffffff"
             state "on", label:'offsetNot: ${currentValue}', backgroundColor:"#79b821"
         }
+        valueTile("deleteInfo", "device.deleteInfo", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'To remove this device from ST - delete the corresponding GCal Search Trigger.'
+        }
         
 		main "status"
-		details(["status", "refresh", "summary"])	
+		details(["summary", "status", "refresh", "deleteInfo"])	
         			//"closeBtn", "openBtn",  , "startMsgTime", "startMsg", "endMsgTime", "endMsg", , "offsetNotify"
 	}
 }
 
 def installed() {
     log.trace "GCalEventSensor: installed()"
+    sendEvent(name: "DeviceWatch-Enroll", value: "{\"protocol\": \"LAN\", \"scheme\":\"untracked\", \"hubHardwareId\": \"${device.hub.hardwareID}\"}")
+    
     sendEvent(name: "switch", value: "off")
     sendEvent(name: "offsetNotify", value: "off")
     sendEvent(name: "contact", value: "closed", isStateChange: true)
@@ -235,10 +240,11 @@ void poll() {
         	def title = event.summary                       
             
 			// Get Calendar Name 
-			def calName = "Primary Calendar"
+			def calName = "Primary Google Calendar"
+            if (primaryName) { calName = primaryName }
 	        if ( event?.organizer?.displayName ) {
     	       	calName = event.organizer.displayName
-        	}
+        	} 
 	        sendEvent("name":"calName", "value":calName, displayed: false)             	           
 
 			// Get event start and end times
@@ -255,7 +261,7 @@ void poll() {
     	        endTime = new Date(sdf.parse(event.end.date).time - 60)   
 	        } else {            	
 				//	this is for timed events            	            
-        	    def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss")
+        	    def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss")
             	sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))	            
                 startTime = sdf.parse(event.start.dateTime)
         	    endTime = sdf.parse(event.end.dateTime)
@@ -285,7 +291,7 @@ void poll() {
             log.debug "startMsgTime = ${startMsgTime} / endMsgTime = ${endMsgTime}"
             
 			// Build Event Summary
-	        def eventSummary = "Event: ${title}\n\n"
+	        def eventSummary = "Next GCal Event: ${title}\n\n"
 			eventSummary += "Calendar: ${calName}\n\n"   
     	    def startTimeHuman = startTime.format("EEE, MMM dd hh:mm a", location.timeZone)
         	eventSummary += "Event Start: ${startTimeHuman}\n"
@@ -327,12 +333,14 @@ void poll() {
 			sendEvent("name":"startMsgTime", "value":startMsgTime, displayed: false, isStateChange: true)            
 			sendEvent("name":"startMsg", "value":"${startMsg}", displayed: false, isStateChange: true)
             
-            
+       //     def eventTest = new Date()
+            log.debug "eventTest = ${eventTest}"
       		// ALREADY IN EVENT?	        	                   
 	           // YES
         	if ( startTime <= new Date() ) {
-            	if ( new Date () < endTime ) {
-	        		log.debug "Already in ${type}vent ${title}."
+//				log.debug "startTime ${startTime} should be before eventTest = ${eventTest}"
+            	if ( new Date() < endTime ) {
+	        		log.debug "Currently within ${type}vent ${title}."
 		        	if (!isOpen) {                     
         	    		log.debug "Contact currently closed, so opening."                    
             	        open()
@@ -344,7 +352,8 @@ void poll() {
 					    parent.scheduleMsg("endMsg", endMsgTime, endMsg, [overwrite: true]) 
                 	}
 				} else {
-	                log.debug "Already past ${type}vent ${title}."
+	                log.debug "Already past start of ${type}vent ${title}."
+                    
 		        	if (isOpen) {                     
         	    		log.debug "Contact incorrectly open, so close."                    
             	        close()
