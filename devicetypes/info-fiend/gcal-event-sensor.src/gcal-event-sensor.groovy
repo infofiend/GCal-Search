@@ -23,16 +23,16 @@
  * 				Fixed Event Trigger with no search string.
  *				Added AskAlexa Message Queue compatibility
  * 20170302.1 - Re-release version 
- * 20160411.1 - Change schedule to happen in the child app instead of the device
- * 20160332.2 - Updated date parsing for non-fullday events
- * 20160331.1 - Fix for all day event attempt #2
- * 20160319.1 - Fix for all day events
- * 20160302.1 - Allow for polling of device version number
- * 20160301.1 - GUI fix for white space
- * 20160223.4 - Fix for Dates in UK
- * 20160223.3 - Fix for DateFormat, set the closeTime before we call open() on in progress event to avoid exception
- * 20160223.1 - Error checking - Force check for Device Handler so we can let the user have a more informative error
- *
+ * 20170411.1 - Change schedule to happen in the child app instead of the device
+ * 20170332.2 - Updated date parsing for non-fullday events
+ * 20170331.1 - Fix for all day event attempt #2
+ * 20170319.1 - Fix for all day events
+ * 20170302.1 - Allow for polling of device version number
+ * 20170301.1 - GUI fix for white space
+ * 20170223.4 - Fix for Dates in UK
+ * 20170223.3 - Fix for DateFormat, set the closeTime before we call open() on in progress event to avoid exception
+ * 20170223.1 - Error checking - Force check for Device Handler so we can let the user have a more informative error
+ * 20180312.1 - added location and locationForURL attributes; added location to event summary
  *
  */
 
@@ -68,6 +68,8 @@ metadata {
         attribute "endMsg", "string"
         attribute "offsetNotify", "string"
         attribute "deleteInfo", "string"
+        attribute "location", "string"
+        attribute "locationForURL", "string"
 	}
 
 	simulator {
@@ -95,7 +97,7 @@ metadata {
         }
 
         //Event Summary
-        valueTile("summary", "device.eventSummary", inactiveLabel: false, decoration: "flat", width: 6, height: 3) {
+        valueTile("summary", "device.eventSummary", inactiveLabel: false, decoration: "flat", width: 6, height: 6) {
             state "default", label:'${currentValue}'
         }
         
@@ -107,6 +109,9 @@ metadata {
             state "default", label:'${currentValue}'
         }
         valueTile("name", "device.name", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'${currentValue}'
+        }
+        valueTile("location", "device.location", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
             state "default", label:'${currentValue}'
         }
         
@@ -246,7 +251,14 @@ void poll() {
     	       	calName = event.organizer.displayName
         	} 
 	        sendEvent("name":"calName", "value":calName, displayed: false)             	           
-
+			
+            // Get Location, if available
+            def evtLocation
+            if ( event?.location ) {
+            	evtLocation = event.location
+            }    
+            sendEvent("name":"location", "value":evtLocation, displayed: false)             	           
+            
 			// Get event start and end times
 	        def startTime
     	    def endTime
@@ -292,7 +304,9 @@ void poll() {
             
 			// Build Event Summary
 	        def eventSummary = "Next GCal Event: ${title}\n\n"
-			eventSummary += "Calendar: ${calName}\n\n"   
+			eventSummary += "Calendar: ${calName}\n\n" 
+            if ( evtLocation ) { eventSummary += "Location: ${evtLocation}\n\n" }
+            
     	    def startTimeHuman = startTime.format("EEE, MMM dd hh:mm a", location.timeZone)
         	eventSummary += "Event Start: ${startTimeHuman}\n"
 	        
