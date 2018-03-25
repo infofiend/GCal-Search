@@ -33,6 +33,7 @@
  * 20170223.3 - Fix for DateFormat, set the closeTime before we call open() on in progress event to avoid exception
  * 20170223.1 - Error checking - Force check for Device Handler so we can let the user have a more informative error
  * 20180312.1 - added location and locationForURL attributes; added location to event summary
+ * 20180325.1 - added eventTime
  *
  */
 
@@ -70,6 +71,7 @@ metadata {
         attribute "deleteInfo", "string"
         attribute "location", "string"
         attribute "locationForURL", "string"
+        attribute "eventTime", "string"
 	}
 
 	simulator {
@@ -135,11 +137,26 @@ metadata {
         valueTile("deleteInfo", "device.deleteInfo", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
             state "default", label:'To remove this device from ST - delete the corresponding GCal Search Trigger.'
         }
+        valueTile("eventTime", "device.eventTime", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'eventTime:\n ${currentValue}'
+        }
+        
+        htmlTile(name:"mapHTML",
+				action: "getMapHTML",
+				refreshInterval: 1,
+				width: 6,
+				height: 12,
+				whitelist: ["www.google.com", "maps.googleapis.com"]
+        )
         
 		main "status"
-		details(["summary", "status", "refresh", "deleteInfo"])	
-        			//"closeBtn", "openBtn",  , "startMsgTime", "startMsg", "endMsgTime", "endMsg", , "offsetNotify"
+		details(["eventTime", "summary", "status", "refresh", "deleteInfo"])	
+        			//"closeBtn", "openBtn",  , "startMsgTime", "startMsg", "endMsgTime", "endMsg", , "offsetNotify", "mapHTML",
 	}
+}
+
+mappings {
+	path("/getMapHTML") {action: [GET: "getMapHTML"]}
 }
 
 def installed() {
@@ -161,6 +178,7 @@ def updated() {
 def initialize() {
 	
     refresh()
+    
 
 }
 
@@ -269,13 +287,14 @@ void poll() {
 				type = "All-day e"   				             
     	        def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd")
         	    sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))            	
-                startTime = sdf.parse(event.start.date)                
+                startTime = sdf.parse(event.start.date)
     	        endTime = new Date(sdf.parse(event.end.date).time - 60)   
 	        } else {            	
 				//	this is for timed events            	            
         	    def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss")
             	sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))	            
                 startTime = sdf.parse(event.start.dateTime)
+				sendEvent("name":"eventTime", "value":startTime, displayed: false, isStateChange: true)
         	    endTime = sdf.parse(event.end.dateTime)
             }   						
             log.debug "From GCal: startTime = ${startTime} & endTime = ${endTime}"
@@ -334,17 +353,17 @@ void poll() {
 //            if (event.description) {
 //	            eventSummary += event.description ? event.description : ""
 //    		}
-       	    sendEvent("name":"eventSummary", "value":eventSummary, isStateChange: true)
+       	    sendEvent("name":"eventSummary", "value":eventSummary)
 			
             
             // Then set the closeTime, endMsgTime, and endMsg before opening an event in progress
-            sendEvent("name":"closeTime", "value":endTime, displayed: false, isStateChange: true)           
-			sendEvent("name":"endMsgTime", "value":endMsgTime, displayed: false, isStateChange: true)
-            sendEvent("name":"endMsg", "value":"${endMsg}", displayed: false, isStateChange: true)                        
+            sendEvent("name":"closeTime", "value":endTime, displayed: false)           
+			sendEvent("name":"endMsgTime", "value":endMsgTime, displayed: false)
+            sendEvent("name":"endMsg", "value":"${endMsg}", displayed: false)                        
 
 			// Then set the openTime, startMsgTime, and startMsg 
-			sendEvent("name":"openTime", "value":startTime, displayed: false, isStateChange: true)
-			sendEvent("name":"startMsgTime", "value":startMsgTime, displayed: false, isStateChange: true)            
+			sendEvent("name":"openTime", "value":startTime, displayed: false)
+			sendEvent("name":"startMsgTime", "value":startMsgTime, displayed: false)            
 			sendEvent("name":"startMsg", "value":"${startMsg}", displayed: false, isStateChange: true)
             
        //     def eventTest = new Date()
@@ -443,6 +462,113 @@ private Date msgTimeOffset(int minutes, Date originalTime){
    return offsetTime
 }
 
+
+def getMapHTML() {
+	def html = """
+		<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <title>Directions service</title>
+    <style>
+      /* Always set the map height explicitly to define the size of the div
+       * element that contains the map. */
+      #map {
+        height: 100%;
+      }
+      /* Optional: Makes the sample page fill the window. */
+      html, body {
+        height: 100%; 
+        margin: 0;
+        padding: 0;
+      }
+      #right-panel {
+        font-family: 'Roboto','sans-serif';
+        line-height: 20px;
+        padding-left: 5px;
+        font-size: 10px;
+      }
+
+      #right-panel select, #right-panel input {
+        font-size: 12px;
+      }
+
+      #right-panel select {
+        width: 100%;
+      }
+
+      #right-panel i {
+        font-size: 12px;
+      }
+      #right-panel {
+        height: 95%;
+        float: right;
+        width: 30%;
+        overflow: auto;
+      }
+      #map {
+        margin-right: 30%;
+      }
+      @media print {
+        #map {
+          height: 100%;
+          margin: 0;
+        }
+        #right-panel {
+          float: none;
+          width: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="right-panel"></div>
+	<div id="map"></div>
+    <script>
+      function initMap() {
+        var directionsService = new google.maps.DirectionsService;
+        var directionsDisplay = new google.maps.DirectionsRenderer;
+        var map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 12,
+          center: {lat: 40.7114747, lng: -73.9844757}
+        });
+        
+        directionsDisplay.setMap(map);
+        directionsDisplay.setPanel(document.getElementById('right-panel'));
+
+        calculateAndDisplayRoute(directionsService, directionsDisplay);
+                
+      }
+
+      function calculateAndDisplayRoute(directionsService, directionsDisplay) {
+        directionsService.route({
+          origin: '115 Lenox Rd., Brooklyn, NY 11226',
+          destination: '5 W. 91st St., New York, NY 10024',
+          travelMode: 'TRANSIT',
+          transitOptions: {
+    		arrivalTime: new Date(1521990009000 +(4*60*60*1000))				   
+  		  }          
+        }, function(response, status) {
+          if (status === 'OK') {
+            directionsDisplay.setDirections(response);
+          } else {
+            window.alert('Directions request failed due to ' + status);
+          }
+        });
+      }
+    </script>
+    <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDL95CqZ5wav1hrEhWXn2zfTCBwKgC4K8o&callback=initMap">
+    </script>
+  </body>
+</html>
+		"""
+	render contentType: "text/html", data: html, status: 200
+}
+
+
+
 def version() {
-	def text = "20170419.1"
+	def text = "20180324.1"
 }
