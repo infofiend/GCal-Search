@@ -34,6 +34,7 @@
  * 20170223.1 - Error checking - Force check for Device Handler so we can let the user have a more informative error
  * 20180312.1 - added location and locationForURL attributes; added location to event summary
  * 20180325.1 - added eventTime
+ * 20180327.1 - eventTime now works for all-day events; added eventTitle; added Power capability (toggles between 0 and 1) - for use with webCoRE bc defined virtual device subscriptions can't use custom attributes 
  *
  */
 
@@ -51,11 +52,14 @@ metadata {
         capability "Switch"
         capability "Actuator"
 		capability "Health Check"
+        capability "Power Meter"
 
 		command "open"
 		command "close"
         command "offsetOn"
         command "offsetOff"
+        command "childSummary"
+        command "childLocation"
         
         attribute "calendar", "json_object"
         attribute "calName", "string"
@@ -72,6 +76,7 @@ metadata {
         attribute "location", "string"
         attribute "locationForURL", "string"
         attribute "eventTime", "string"
+        attribute "eventTitle", "string"
 	}
 
 	simulator {
@@ -140,6 +145,9 @@ metadata {
         valueTile("eventTime", "device.eventTime", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
             state "default", label:'eventTime:\n ${currentValue}'
         }
+        valueTile("eventTitle", "device.eventTitle", inactiveLabel: false, decoration: "flat", width: 6, height: 2) {
+            state "default", label:'${currentValue}'
+        }
         
         htmlTile(name:"mapHTML",
 				action: "getMapHTML",
@@ -150,8 +158,8 @@ metadata {
         )
         
 		main "status"
-		details(["eventTime", "summary", "status", "refresh", "deleteInfo"])	
-        			//"closeBtn", "openBtn",  , "startMsgTime", "startMsg", "endMsgTime", "endMsg", , "offsetNotify", "mapHTML",
+		details(["eventTitle", "summary", "status", "refresh", "deleteInfo"])	
+        			//"closeBtn", "openBtn",  , "startMsgTime", "startMsg", "endMsgTime", "endMsg", , "offsetNotify", "eventTime", "mapHTML",
 	}
 }
 
@@ -161,7 +169,7 @@ mappings {
 
 def installed() {
     log.trace "GCalEventSensor: installed()"
-    sendEvent(name: "DeviceWatch-Enroll", value: "{\"protocol\": \"LAN\", \"scheme\":\"untracked\", \"hubHardwareId\": \"${device.hub.hardwareID}\"}")
+ //   sendEvent(name: "DeviceWatch-Enroll", value: "{\"protocol\": \"LAN\", \"scheme\":\"untracked\"}")
     
     sendEvent(name: "switch", value: "off")
     sendEvent(name: "offsetNotify", value: "off")
@@ -176,7 +184,7 @@ def updated() {
 }
 
 def initialize() {
-	
+	sendEvent(name: "power", value: "0", isStateChange: true)
     refresh()
     
 
@@ -261,7 +269,9 @@ void poll() {
 			//	Only process the next scheduled event             
             def event = items.items[0]
         	def title = event.summary                       
-            
+           	sendEvent(name: "eventTitle", value: title)
+           	
+
 			// Get Calendar Name 
 			def calName = "Primary Google Calendar"
             if (primaryName) { calName = primaryName }
@@ -288,17 +298,29 @@ void poll() {
     	        def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd")
         	    sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))            	
                 startTime = sdf.parse(event.start.date)
-    	        endTime = new Date(sdf.parse(event.end.date).time - 60)   
+                endTime = new Date(sdf.parse(event.end.date).time - 60)   
 	        } else {            	
 				//	this is for timed events            	            
         	    def sdf = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss")
             	sdf.setTimeZone(TimeZone.getTimeZone(items.timeZone))	            
                 startTime = sdf.parse(event.start.dateTime)
-				sendEvent("name":"eventTime", "value":startTime, displayed: false, isStateChange: true)
         	    endTime = sdf.parse(event.end.dateTime)
             }   						
             log.debug "From GCal: startTime = ${startTime} & endTime = ${endTime}"
-            
+//            log.debug "old power = ${device.currentValue("power")}"
+            // Toggles power attribute when new event is detected
+            if (startTime != device.currentValue("eventTime") ) {
+	            if (device.currentValue("power") == 0 ) {
+    	        	sendEvent(name: "power", value: "1", isStateChange: true)
+//		            log.debug "new power = ${device.currentValue("power")}"			        	    
+                } else {
+            		sendEvent(name: "power", value: "0", displayed: true, isStateChange: true)
+//		            log.debug "new power = ${device.currentValue("power")}"			
+                }
+            }            
+
+            sendEvent("name":"eventTime", "value":startTime, displayed: false, isStateChange: true)
+                        
 			// Build Notification Times & Messages
             def startMsgWanted = parent.checkMsgWanted("startMsg")
 			def startMsgTime = startTime
@@ -547,7 +569,7 @@ def getMapHTML() {
           destination: '5 W. 91st St., New York, NY 10024',
           travelMode: 'TRANSIT',
           transitOptions: {
-    		arrivalTime: new Date(1521990009000 +(4*60*60*1000))				   
+    		arrivalTime: new Date(1522209600000 +(4*60*60*1000))				   
   		  }          
         }, function(response, status) {
           if (status === 'OK') {
@@ -567,8 +589,22 @@ def getMapHTML() {
 	render contentType: "text/html", data: html, status: 200
 }
 
+def childSummary() {
+	def theSum 
+    theSum = device.currentValue("eventSummary") ?: "There is no event."
+	log.debug "sending summary of ${theSum}"
+	return "${theSum}"
+}    
 
+def childLocation() {
+	def theLoc
+    theLoc = device.currentValue("location") 
+//    replace (theLoc, " ", "+")
+	log.debug "sending location of ${theLoc}"
+	return "${theLoc}"
+}    
 
+    
 def version() {
 	def text = "20180324.1"
 }
