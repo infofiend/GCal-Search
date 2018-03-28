@@ -35,7 +35,8 @@
  * 20180312.1 - added location and locationForURL attributes; added location to event summary
  * 20180325.1 - added eventTime
  * 20180327.1 - eventTime now works for all-day events; added eventTitle; added Power capability (toggles between 0 and 1) - for use with webCoRE bc defined virtual device subscriptions can't use custom attributes 
- *
+ * 20180327.2 - added startOffset and endOffset attributes; - these can be set by new commands below (and will then override the offSets from parent Trigger app)
+ *			  - added setStartoffset() and setEndoffset() 
  */
 
 preferences {
@@ -60,6 +61,9 @@ metadata {
         command "offsetOff"
         command "childSummary"
         command "childLocation"
+        command "setStartoffset"
+        command "setEndoffset"
+        
         
         attribute "calendar", "json_object"
         attribute "calName", "string"
@@ -77,6 +81,8 @@ metadata {
         attribute "locationForURL", "string"
         attribute "eventTime", "string"
         attribute "eventTitle", "string"
+        attribute "startOffset", "number"
+        attribute "endOffset", "number"
 	}
 
 	simulator {
@@ -326,6 +332,10 @@ void poll() {
 			def startMsgTime = startTime
 			if (startMsgWanted) {
 				def startOffset = parent.getStartOffset() ?:0            
+				if ( device.currentValue("startOffset") > 0 ) { 
+                	startOffset = device.currentValue("startOffset")
+                }  
+                
        		    if (startOffset !=0) { 
 		            startMsgTime = msgTimeOffset(startOffset, startMsgTime)
 					log.debug "startOffset: ${startOffset} / startMsgTime = ${startMsgTime}"
@@ -336,6 +346,9 @@ void poll() {
            	def endMsgTime = endTime                      
             if (endMsgWanted) {
 				def endOffset = parent.getEndOffset() ?:0            
+				if ( device.currentValue("endOffset") > 0 ) { 
+                	endOffset = device.currentValue("endOffset")
+                }  
        	    	if (endOffset !=0) { 
 	        	    endMsgTime = msgTimeOffset(endOffset, endMsgTime)
 		            log.debug "endOffset: ${endOffset} / endMsgTime = ${endMsgTime}}"                        
@@ -606,5 +619,5 @@ def childLocation() {
 
     
 def version() {
-	def text = "20180324.1"
+	def text = "20180327.2"
 }
