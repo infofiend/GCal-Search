@@ -29,3 +29,7 @@ Steps to set this up...
 4) Open the ST app on your phone and install the "GCal Search" app. 
         -This will walk you through connecting to Google and selecting a calendar and search terms.
         - You can create multiple connections, and based on your selection of virtual device, the app will create a virtual Contact Sensor or a virtual Presence Sensor that are Open/Present when the event starts and Close/Not Present when the event ends.
+
+
+Donations always welcome... 
+https://www.paypal.me/infofiend
